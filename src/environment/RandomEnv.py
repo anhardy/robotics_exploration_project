@@ -35,7 +35,8 @@ class SimEnv:
     Defines procedurally generated simulation environment, given global dimensions and parameters for random generation
     """
 
-    def __init__(self, width, height, min_room_size, max_room_size, min_rooms, max_rooms, hallway_width):
+    def __init__(self, width, height, min_room_size, max_room_size, min_rooms, max_rooms, hallway_width, n_robots,
+                 r_radius):
         self.width = width
         self.height = height
         self.grid = [[0 for _ in range(width)] for _ in range(height)]
@@ -45,8 +46,23 @@ class SimEnv:
         self.min_rooms = min_rooms
         self.max_rooms = max_rooms
         self.hallway_width = hallway_width
+        self.r_radius = 5
         self.create_rooms()
         self.connect_rooms()
+        self.starting_points = self.pick_starting_points(n_robots, r_radius)
+
+    def pick_starting_points(self, n_robot, r_radius):
+        start_room = random.choice(self.rooms)
+        center_x, center_y = start_room.center()
+        starting_points = []
+
+        for _ in range(n_robot):
+            x = random.randint(center_x - start_room.width // 2 + r_radius, center_x + start_room.width // 2 - r_radius)
+            y = random.randint(center_y - start_room.height // 2 + r_radius, center_y + start_room.height // 2 -
+                               r_radius)
+            starting_points.append((x, y))
+
+        return starting_points
 
     def create_rooms(self):
         # Set number of rooms
@@ -180,6 +196,9 @@ class SimEnv:
                 orig_y = int(y / y_scale)
                 scaled_grid[y][x] = self.grid[orig_y][orig_x]
 
+        self.starting_points = np.array(list(self.starting_points)) * np.array([x_scale, y_scale])
+        self.r_radius *= x_scale
+
         self.width = new_width
         self.height = new_height
         self.grid = scaled_grid
@@ -230,15 +249,17 @@ class SimEnv:
             ys.append(first_y)
             plt.plot(xs, ys)
 
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        plt.title('Polygon Environment')
+        xs, ys = zip(*self.starting_points)
+        plt.scatter(xs, ys, )
+
+        plt.title('Environment')
 
         plt.savefig('env_poly.png')
 
 
 # random.seed(313)
-env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=3)
+env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=3,
+             n_robots=5, r_radius=2)
 env.print_grid()
 env.draw_env('env.png')
 # obstacles = env.get_obstacles()
