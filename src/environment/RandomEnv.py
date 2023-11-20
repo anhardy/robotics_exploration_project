@@ -36,7 +36,7 @@ class SimEnv:
     """
 
     def __init__(self, width, height, min_room_size, max_room_size, min_rooms, max_rooms, hallway_width, n_robots,
-                 r_radius):
+                 r_radius, rand_connections):
         self.width = width
         self.height = height
         self.grid = [[0 for _ in range(width)] for _ in range(height)]
@@ -49,6 +49,8 @@ class SimEnv:
         self.r_radius = 5
         self.create_rooms()
         self.connect_rooms()
+        self.connect_randomly(rand_connections)
+        self.rand_connections = rand_connections
         self.starting_points = self.pick_starting_points(n_robots, r_radius)
 
     def pick_starting_points(self, n_robot, r_radius):
@@ -118,6 +120,17 @@ class SimEnv:
         if closest_pair:
             self.create_hallway(*closest_pair)
             closest_pair[0].connected = True
+
+    # Additional random connections
+    def connect_randomly(self, max_connections):
+        for room1 in self.rooms:
+
+            num_connections = random.randint(0, max_connections)
+            for _ in range(num_connections):
+                room2 = random.choice(self.rooms)
+
+                self.create_hallway(room1, room2)
+                room1.connected = True
 
     def distance_between_rooms(self, room1, room2):
         x1, y1 = room1.center()
@@ -223,7 +236,12 @@ class SimEnv:
     # simple scenario this seems to have errors. However, these errors actually seem to contribute to the environment
     def convert_to_poly(self):
         array = np.array(self.grid, dtype=np.uint8) * 255
-        contours, _ = cv2.findContours(array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if self.rand_connections > 0:
+            contours, _ = cv2.findContours(array, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # Use external if not using random connects. Random connections can sometimes result in every room being merged
+        #   into a single polygon. This merging behavior is desirable for small subsets of rooms
+        else:
+            contours, _ = cv2.findContours(array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contour_vertices = []
         for cnt in contours:
             epsilon = 0.00001 * cv2.arcLength(cnt, True)
@@ -247,7 +265,7 @@ class SimEnv:
             first_y = ys[0]
             xs.append(first_x)
             ys.append(first_y)
-            plt.plot(xs, ys)
+            plt.plot(xs, ys, c='b')
 
         xs, ys = zip(*self.starting_points)
         plt.scatter(xs, ys, )
@@ -256,13 +274,14 @@ class SimEnv:
 
         plt.savefig('env_poly.png')
 
+        return contour_vertices
+
 
 # random.seed(313)
-env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=3,
-             n_robots=5, r_radius=2)
+env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=5,
+             n_robots=5, r_radius=2, rand_connections=0)
 env.print_grid()
 env.draw_env('env.png')
 # obstacles = env.get_obstacles()
 env.scale_grid(1000, 1000)
-env.convert_to_poly()
-
+polygon = env.convert_to_poly()
