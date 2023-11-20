@@ -1,7 +1,7 @@
 import numpy as np
 
 from src.environment.RandomEnv import SimEnv
-from src.sim.helpers import rotate_vector, line_intersection, is_between
+from src.sim.helpers import rotate_vector, line_intersection, is_between, plot_detection, angle_between
 
 
 class Robot:
@@ -48,19 +48,22 @@ class Robot:
         for vector in self.perception_cone:
             closest_point = None
             min_distance = np.inf
-            ray_end = self.position + vector
 
             for polygon in polygons:
                 for i in range(len(polygon)):
-                    line1 = [self.position, ray_end]
+                    line1 = [self.position, self.position + vector]
                     line2 = [polygon[i], polygon[(i + 1) % len(polygon)]]
 
                     intersection = line_intersection(line1, line2)
                     if intersection and is_between(line2[0], line2[1], intersection):
-                        distance = np.linalg.norm(np.array(intersection) - self.position)
-                        if distance < min_distance and distance < np.linalg.norm(vector):
-                            min_distance = distance
-                            closest_point = intersection
+                        to_intersection = np.array(intersection) - self.position
+                        if (np.linalg.norm(to_intersection) < np.linalg.norm(vector) and angle_between(vector,
+                                                                                                       to_intersection)
+                                <= np.pi / 2):
+                            distance = np.linalg.norm(to_intersection)
+                            if distance < min_distance:
+                                min_distance = distance
+                                closest_point = intersection
 
             if closest_point:
                 closest_intersections.append(closest_point)
@@ -77,7 +80,6 @@ class Robot:
 # polygons = env.convert_to_poly()
 # test_rob = Robot(env.starting_points[0])
 # test_detect = test_rob.detect(polygons)
+# plot_detection(test_rob.position, test_rob.perception_cone, polygons, test_detect)
 #
 # print('test')
-
-
