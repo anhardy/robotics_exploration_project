@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.environment.RandomEnv import SimEnv
+# from src.environment.RandomEnv import SimEnv
 from src.sim.helpers import rotate_vector, line_intersection, is_between, plot_detection, angle_between
 
 
@@ -8,9 +8,8 @@ class Robot:
     def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, scale=50):
         self.position = np.array(position)
         self.velocity = np.array([0, 0])
-        self.last_non_zero_velocity = np.array([1, 0])
         self.acceleration = np.array([0, 0])
-        self.orientation = np.array([1, 0])
+        self.orientation = np.random.randint(-360, 360, size=(2,))  # np.array([1, 0])
         self.angle_range = angle_range
         self.num_vectors = num_vectors
         self.scale = scale
@@ -18,11 +17,11 @@ class Robot:
 
     def update_velocity(self):
         self.velocity += self.acceleration
+        # Only update orientation if velocity is nonzero
         if np.any(self.velocity != 0):
-            self.last_non_zero_velocity = self.velocity
-        magnitude = np.linalg.norm(self.last_non_zero_velocity)
-        if magnitude != 0:
-            self.orientation = self.last_non_zero_velocity / magnitude
+            magnitude = np.linalg.norm(self.velocity)
+            if magnitude != 0:
+                self.orientation = self.velocity / magnitude
         self.perception_cone = self.get_perception_cone()
 
     # Generate vectors in a cone around the orientation vector.
@@ -81,5 +80,5 @@ class Robot:
 # test_rob = Robot(env.starting_points[0])
 # test_detect = test_rob.detect(polygons)
 # plot_detection(test_rob.position, test_rob.perception_cone, polygons, test_detect)
-#
+
 # print('test')
