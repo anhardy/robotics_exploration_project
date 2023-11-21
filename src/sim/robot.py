@@ -1,20 +1,22 @@
 import numpy as np
 
 # from src.environment.RandomEnv import SimEnv
-from src.sim.helpers import rotate_vector, line_intersection, is_between, plot_detection, angle_between
+from src.sim.functions import rotate_vector, line_intersection, is_between, plot_detection, angle_between
 
 
 class Robot:
-    def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, scale=50, max_vel=5):
+    def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, scale=50, max_vel=5, avoid_range=7):
         self.position = np.array(position)
-        self.velocity = np.array([0, 0])
-        self.acceleration = np.array([0, 0])
-        self.orientation = np.random.randint(-360, 360, size=(2,))  # np.array([1, 0])
+        self.velocity = np.array([0.0, 0.0])
+        self.acceleration = np.array([0.0, 0.0])
+        self.orientation = np.random.randint(-360.0, 360.0, size=(2,))  # np.array([1, 0])
         self.angle_range = angle_range
         self.num_vectors = num_vectors
         self.scale = scale
         self.perception_cone = self.get_perception_cone()
         self.max_vel = max_vel
+        self.avoid_range = avoid_range
+        self.position_history = [np.copy(self.position)]
 
     def update_velocity(self):
         self.velocity += self.acceleration
@@ -29,6 +31,10 @@ class Robot:
             if magnitude != 0:
                 self.orientation = self.velocity / magnitude
         self.perception_cone = self.get_perception_cone()
+
+    def update_position(self):
+        self.position += self.velocity
+        self.position_history.append(np.copy(self.position))
 
     # Generate vectors in a cone around the orientation vector.
     def get_perception_cone(self):

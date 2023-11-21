@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.animation import FuncAnimation, FFMpegWriter
 
 
 # Rotate a 2D vector by a given angle.
@@ -53,11 +54,10 @@ def is_between(a, b, c):
 
 
 def plot_detection(robot_position, perception_cone, polygons, intersections):
-    # Plot the polygons
     for polygon in polygons:
-        polygon_with_closure = polygon + [polygon[0]]  # Close the polygon for plotting
+        polygon_with_closure = polygon + [polygon[0]]
         x, y = zip(*polygon_with_closure)
-        plt.plot(x, y, 'b-')  # Plot polygon edges in blue
+        plt.plot(x, y, 'b-')
 
     # Plot the detection vectors
     for vector in perception_cone:
@@ -76,3 +76,53 @@ def plot_detection(robot_position, perception_cone, polygons, intersections):
     plt.title('Robot Perception')
     plt.axis('equal')
     plt.show()
+
+
+def plot_robot_paths(robots, polygons):
+    plt.figure(figsize=(10, 10))
+
+    for polygon in polygons:
+        polygon_with_closure = polygon + [polygon[0]]
+        x, y = zip(*polygon_with_closure)
+        plt.plot(x, y, 'b-')
+
+    for robot in robots:
+        x_positions = [position[0] for position in robot.position_history]
+        y_positions = [position[1] for position in robot.position_history]
+
+        plt.plot(x_positions, y_positions, marker='o', markersize=1)
+
+    plt.title('Robot Positions')
+    plt.legend([f'Robot {i + 1}' for i in range(len(robots))])
+    plt.savefig('sim_output.png')
+
+
+def animate_paths(robots, polygons):
+    plt.clf()
+    fig, ax = plt.subplots()
+    lines = [ax.plot([], [], label=f'Robot {i}')[0] for i, _ in enumerate(robots)]
+    for polygon in polygons:
+        polygon_with_closure = polygon + [polygon[0]]
+        x, y = zip(*polygon_with_closure)
+        plt.plot(x, y, 'b-')
+
+    def init():
+        return lines
+
+    def update(frame):
+        for line, robot in zip(lines, robots):
+            if frame < len(robot.position_history):
+                x, y = zip(*robot.position_history[:frame + 1])
+                line.set_data(x, y)
+        return lines
+
+    anim = FuncAnimation(fig, update, frames=max(len(r.position_history) for r in robots),
+                         init_func=init, blit=True)
+
+    plt.legend()
+    # plt.show()
+    anim.save('paths.gif', fps=60)
+
+    return anim
+
+
