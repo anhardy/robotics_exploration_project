@@ -5,7 +5,7 @@ from src.sim.helpers import rotate_vector, line_intersection, is_between, plot_d
 
 
 class Robot:
-    def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, scale=50):
+    def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, scale=50, max_vel=5):
         self.position = np.array(position)
         self.velocity = np.array([0, 0])
         self.acceleration = np.array([0, 0])
@@ -14,9 +14,15 @@ class Robot:
         self.num_vectors = num_vectors
         self.scale = scale
         self.perception_cone = self.get_perception_cone()
+        self.max_vel = max_vel
 
     def update_velocity(self):
         self.velocity += self.acceleration
+        velocity_magnitude = np.linalg.norm(self.velocity)
+
+        if velocity_magnitude > self.max_vel:
+            self.velocity = (self.velocity / velocity_magnitude) * self.max_vel
+
         # Only update orientation if velocity is nonzero
         if np.any(self.velocity != 0):
             magnitude = np.linalg.norm(self.velocity)
@@ -68,7 +74,6 @@ class Robot:
                 closest_intersections.append(closest_point)
 
         return closest_intersections
-
 
 # env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=5,
 #              n_robots=5, r_radius=2, rand_connections=0)
