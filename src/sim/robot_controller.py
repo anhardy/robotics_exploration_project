@@ -8,10 +8,10 @@ class RobotController:
         self.steer_behavior = steer_behavior
         self.avoid_behavior = avoid_behavior
 
-    def calculate_acceleration(self, robot, target, obstacles):
+    def calculate_acceleration(self, robot, target, intersections):
         steer_vector = self.steer_behavior(robot, target) * self.steer_weight
         if self.avoid_behavior is not None:
-            avoid_vector = self.avoid_behavior(robot, obstacles) * self.avoid_weight
+            avoid_vector = self.avoid_behavior(robot, intersections) * self.avoid_weight
         else:
             avoid_vector = np.array([0, 0])
 

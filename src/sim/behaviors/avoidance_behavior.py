@@ -1,10 +1,8 @@
 import numpy as np
 
 
-def avoidance_behavior(robot, polygons):
+def avoidance_behavior(robot, intersections):
     avoidance_vector = np.array([0.0, 0.0])
-
-    intersections = robot.detect(polygons)
 
     for point in intersections:
         # Vector from intersection to robot

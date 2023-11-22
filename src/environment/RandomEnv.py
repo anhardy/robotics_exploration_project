@@ -278,10 +278,10 @@ class SimEnv:
 
 
 # random.seed(313)
-env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=5,
-             n_robots=5, r_radius=2, rand_connections=0)
-env.print_grid()
-env.draw_env('env.png')
-# obstacles = env.get_obstacles()
-env.scale_grid(1000, 1000)
-polygon = env.convert_to_poly()
+# env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=5,
+#              n_robots=5, r_radius=2, rand_connections=0)
+# env.print_grid()
+# env.draw_env('env.png')
+# # obstacles = env.get_obstacles()
+# env.scale_grid(1000, 1000)
+# polygon = env.convert_to_poly()

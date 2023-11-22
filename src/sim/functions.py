@@ -1,6 +1,10 @@
+import cairo
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib.animation import FuncAnimation, FFMpegWriter
+from matplotlib.animation import FuncAnimation
+from scipy.ndimage import distance_transform_edt
+from skimage.morphology import skeletonize
+import networkx as nx
 
 
 # Rotate a 2D vector by a given angle.
@@ -97,6 +101,7 @@ def plot_robot_paths(robots, polygons):
     plt.savefig('sim_output.png')
 
 
+# Animates full path of robots
 def animate_paths(robots, polygons):
     plt.clf()
     fig, ax = plt.subplots()
@@ -124,5 +129,108 @@ def animate_paths(robots, polygons):
     anim.save('paths.gif', fps=60)
 
     return anim
+
+
+# Just converts continuous coordinates to occupancy grid coordinates
+def continuous_to_grid(points, env_size, grid_size):
+    points = np.array(points)
+    env_size = np.array(env_size, dtype=float)
+    grid_size = np.array(grid_size)
+
+    grid_points = (points / env_size) * grid_size
+    grid_points = np.clip(grid_points, [0, 0], grid_size - 1).astype(int)
+
+    return grid_points
+
+
+def animate_sim(robots, polygons):
+    fig, ax = plt.subplots()
+    scatters = [ax.scatter([], [], s=1, label=f'Robot {i}') for i, _ in enumerate(robots)]
+    for polygon in polygons:
+        polygon_with_closure = polygon + [polygon[0]]
+        x, y = zip(*polygon_with_closure)
+        plt.plot(x, y, 'b-')
+
+    def init():
+        return scatters
+
+    def update(frame):
+        for scatter, robot in zip(scatters, robots):
+            if frame < len(robot.position_history):
+                x, y = robot.position_history[frame]
+                scatter.set_offsets([x, y])
+        return scatters
+
+    anim = FuncAnimation(fig, update, frames=max(len(r.position_history) for r in robots),
+                         init_func=init, blit=True)
+
+    plt.legend()
+    anim.save('sim_run.gif', fps=60)
+
+    return anim
+
+
+def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size):
+    grid_intersections = continuous_to_grid(intersections, env_size, grid_size)
+
+    occupancy_grid[grid_intersections[:, 0], grid_intersections[:, 1]] = 0
+
+    grid_open_spaces = continuous_to_grid(open_spaces, env_size, grid_size)
+
+    occupancy_grid[grid_open_spaces[:, 0], grid_open_spaces[:, 1]] = 1
+
+    return occupancy_grid
+
+
+def generate_voronoi_graph(occupancy_grid):
+    distance_map = distance_transform_edt(occupancy_grid >= 0)
+
+    skeleton = skeletonize(distance_map > 0)
+
+    graph = nx.Graph()
+    rows, cols = skeleton.shape
+    for r in range(rows):
+        for c in range(cols):
+            if skeleton[r, c]:
+                graph.add_node((r, c))
+                # Horizontal and vertical neighbors
+                if r > 0 and skeleton[r - 1, c]:
+                    graph.add_edge((r, c), (r - 1, c))
+                if c > 0 and skeleton[r, c - 1]:
+                    graph.add_edge((r, c), (r, c - 1))
+                # Diagonal neighbors
+                if r > 0 and c > 0 and skeleton[r - 1, c - 1]:
+                    graph.add_edge((r, c), (r - 1, c - 1))
+                if r > 0 and c < cols - 1 and skeleton[r - 1, c + 1]:
+                    graph.add_edge((r, c), (r - 1, c + 1))
+                if r < rows - 1 and c > 0 and skeleton[r + 1, c - 1]:
+                    graph.add_edge((r, c), (r + 1, c - 1))
+                if r < rows - 1 and c < cols - 1 and skeleton[r + 1, c + 1]:
+                    graph.add_edge((r, c), (r + 1, c + 1))
+
+    return graph
+
+
+def draw_occupancy(occupancy_grid, filename='occupancy.png'):
+    occupancy_grid = np.flip(occupancy_grid, axis=1)
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, occupancy_grid.shape[0] * 10, occupancy_grid.shape[1] * 10)
+    ctx = cairo.Context(surface)
+
+    # Draw the grid
+    for x in range(occupancy_grid.shape[0]):
+        for y in range(occupancy_grid.shape[1]):
+            if occupancy_grid[x][y] == 0:
+                ctx.rectangle(x * 10, y * 10, 10, 10)
+                ctx.set_source_rgb(0, 0, 0)
+            elif occupancy_grid[x][y] == 1:
+                ctx.rectangle(x * 10, y * 10, 10, 10)
+                ctx.set_source_rgb(1, 1, 1)
+            else:
+                ctx.rectangle(x * 10, y * 10, 10, 10)
+                ctx.set_source_rgb(0.5, 0.5, 0.5)
+
+            ctx.fill()
+
+    surface.write_to_png(filename)
 
 

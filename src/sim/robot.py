@@ -55,6 +55,7 @@ class Robot:
     # Detects closest intersections with polygons in the perception cone.
     def detect(self, polygons):
         closest_intersections = []
+        open_space_points = []
 
         for vector in self.perception_cone:
             closest_point = None
@@ -72,14 +73,27 @@ class Robot:
                                                                                                        to_intersection)
                                 <= np.pi / 2):
                             distance = np.linalg.norm(to_intersection)
+
                             if distance < min_distance:
                                 min_distance = distance
                                 closest_point = intersection
 
             if closest_point:
                 closest_intersections.append(closest_point)
+                x_values = np.linspace(self.position[0], closest_point[0], 26)
+                y_values = np.linspace(self.position[1], closest_point[1], 26)
+                x_values = x_values[:-1]
+                y_values = y_values[:-1]
 
-        return closest_intersections
+                points = np.column_stack((x_values, y_values))
+                open_space_points.extend(points)
+            else:
+                x_values = np.linspace(self.position[0], self.position[0] + vector[0], 25)
+                y_values = np.linspace(self.position[1], self.position[1] + vector[1], 25)
+                points = np.column_stack((x_values, y_values))
+                open_space_points.extend(points)
+
+        return closest_intersections, open_space_points
 
 # env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=5,
 #              n_robots=5, r_radius=2, rand_connections=0)
