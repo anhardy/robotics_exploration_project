@@ -7,9 +7,12 @@ from src.sim.functions import rotate_vector, line_intersection, is_between, plot
 class Robot:
     def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, scale=50, max_vel=5, avoid_range=7):
         self.position = np.array(position)
-        self.velocity = np.array([0.0, 0.0])
+        self.velocity = np.random.randint(-360.0, 360.0, size=(2,))
+        velocity_magnitude = np.linalg.norm(self.velocity)
+        # Initializing a very small start velocity for initial orientation and turning
+        self.velocity = (self.velocity / velocity_magnitude) * 0.001
         self.acceleration = np.array([0.0, 0.0])
-        self.orientation = np.random.randint(-360.0, 360.0, size=(2,))  # np.array([1, 0])
+        self.orientation = np.copy(self.velocity)  # np.array([1, 0])
         self.angle_range = angle_range
         self.num_vectors = num_vectors
         self.scale = scale
@@ -17,24 +20,42 @@ class Robot:
         self.max_vel = max_vel
         self.avoid_range = avoid_range
         self.position_history = [np.copy(self.position)]
+        self.orientation_history = [np.copy(self.orientation)]
+        self.velocity_history = [np.copy(self.velocity)]
+        self.is_avoiding = False
 
     def update_velocity(self):
-        self.velocity += self.acceleration
-        velocity_magnitude = np.linalg.norm(self.velocity)
+        new_velocity = self.velocity + self.acceleration
+        velocity_magnitude = np.linalg.norm(new_velocity)
 
         if velocity_magnitude > self.max_vel:
-            self.velocity = (self.velocity / velocity_magnitude) * self.max_vel
+            new_velocity = (new_velocity / velocity_magnitude) * self.max_vel
+
+        vel_turn_rate = 0.1
+        if self.is_avoiding:
+            vel_turn_rate = 1
+        self.velocity = self.smooth_transition(self.velocity, new_velocity, vel_turn_rate)
 
         # Only update orientation if velocity is nonzero
         if np.any(self.velocity != 0):
-            magnitude = np.linalg.norm(self.velocity)
-            if magnitude != 0:
-                self.orientation = self.velocity / magnitude
+            if np.any(self.velocity != 0):
+                new_orientation = self.velocity / np.linalg.norm(self.velocity)
+                self.orientation = self.smooth_turn(self.orientation, new_orientation, 0.05)
         self.perception_cone = self.get_perception_cone()
+
+    def smooth_turn(self, current_orientation, new_orientation, turning_rate):
+
+        return current_orientation * (1 - turning_rate) + new_orientation * turning_rate
+
+    def smooth_transition(self, current_value, target_value, turning_rate):
+
+        return current_value * (1 - turning_rate) + target_value * turning_rate
 
     def update_position(self):
         self.position += self.velocity
         self.position_history.append(np.copy(self.position))
+        self.orientation_history.append(np.copy(self.orientation))
+        self.velocity_history.append(np.copy(self.velocity))
 
     # Generate vectors in a cone around the orientation vector.
     def get_perception_cone(self):
@@ -80,16 +101,16 @@ class Robot:
 
             if closest_point:
                 closest_intersections.append(closest_point)
-                x_values = np.linspace(self.position[0], closest_point[0], 26)
-                y_values = np.linspace(self.position[1], closest_point[1], 26)
+                x_values = np.linspace(self.position[0], closest_point[0], 101)
+                y_values = np.linspace(self.position[1], closest_point[1], 101)
                 x_values = x_values[:-1]
                 y_values = y_values[:-1]
 
                 points = np.column_stack((x_values, y_values))
                 open_space_points.extend(points)
             else:
-                x_values = np.linspace(self.position[0], self.position[0] + vector[0], 25)
-                y_values = np.linspace(self.position[1], self.position[1] + vector[1], 25)
+                x_values = np.linspace(self.position[0], self.position[0] + vector[0], 100)
+                y_values = np.linspace(self.position[1], self.position[1] + vector[1], 100)
                 points = np.column_stack((x_values, y_values))
                 open_space_points.extend(points)
 

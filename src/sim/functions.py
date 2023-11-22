@@ -105,21 +105,43 @@ def plot_robot_paths(robots, polygons):
 def animate_paths(robots, polygons):
     plt.clf()
     fig, ax = plt.subplots()
-    lines = [ax.plot([], [], label=f'Robot {i}')[0] for i, _ in enumerate(robots)]
+
+    # Lines for paths
+    path_lines = [ax.plot([], [], label=f'Robot {i}')[0] for i, _ in enumerate(robots)]
+
+    # Lines for orientation and velocity vectors
+    orientation_lines = [ax.plot([], [], 'r-', linewidth=1)[0] for _ in robots]
+    velocity_lines = [ax.plot([], [], 'g-', linewidth=1)[0] for _ in robots]
+
+    # Plot polygons
     for polygon in polygons:
         polygon_with_closure = polygon + [polygon[0]]
         x, y = zip(*polygon_with_closure)
         plt.plot(x, y, 'b-')
 
     def init():
-        return lines
+        return path_lines + orientation_lines + velocity_lines
 
     def update(frame):
-        for line, robot in zip(lines, robots):
+        for i, robot in enumerate(robots):
+            # Update path
             if frame < len(robot.position_history):
                 x, y = zip(*robot.position_history[:frame + 1])
-                line.set_data(x, y)
-        return lines
+                path_lines[i].set_data(x, y)
+
+            # Update orientation vector
+            if frame < len(robot.orientation_history):
+                ox, oy = robot.orientation_history[frame]
+                pos_x, pos_y = robot.position_history[frame]
+                orientation_lines[i].set_data([pos_x, pos_x + ox], [pos_y, pos_y + oy])
+
+            # Update velocity vector
+            if frame < len(robot.velocity_history):
+                vx, vy = robot.velocity_history[frame]
+                pos_x, pos_y = robot.position_history[frame]
+                velocity_lines[i].set_data([pos_x, pos_x + vx], [pos_y, pos_y + vy])
+
+        return path_lines + orientation_lines + velocity_lines
 
     anim = FuncAnimation(fig, update, frames=max(len(r.position_history) for r in robots),
                          init_func=init, blit=True)
@@ -144,27 +166,51 @@ def continuous_to_grid(points, env_size, grid_size):
 
 
 def animate_sim(robots, polygons):
+    plt.clf()
     fig, ax = plt.subplots()
+
+    # Scatter plot for robot positions
     scatters = [ax.scatter([], [], s=1, label=f'Robot {i}') for i, _ in enumerate(robots)]
+
+    # Lines for orientation and velocity vectors
+    orientation_lines = [ax.plot([], [], 'r-', linewidth=1)[0] for _ in robots]
+    velocity_lines = [ax.plot([], [], 'g-', linewidth=1)[0] for _ in robots]
+
+    # Plot polygons
     for polygon in polygons:
         polygon_with_closure = polygon + [polygon[0]]
         x, y = zip(*polygon_with_closure)
         plt.plot(x, y, 'b-')
 
     def init():
-        return scatters
+        return scatters + orientation_lines + velocity_lines
 
     def update(frame):
-        for scatter, robot in zip(scatters, robots):
+        for i, robot in enumerate(robots):
+            # Update robot positions
             if frame < len(robot.position_history):
                 x, y = robot.position_history[frame]
-                scatter.set_offsets([x, y])
-        return scatters
+                scatters[i].set_offsets([x, y])
+
+            # Update orientation vector
+            if frame < len(robot.orientation_history):
+                ox, oy = robot.orientation_history[frame]
+                pos_x, pos_y = robot.position_history[frame]
+                orientation_lines[i].set_data([pos_x, pos_x + ox * 5], [pos_y, pos_y + oy * 5])
+
+            # Update velocity vector
+            if frame < len(robot.velocity_history):
+                vx, vy = robot.velocity_history[frame]
+                pos_x, pos_y = robot.position_history[frame]
+                velocity_lines[i].set_data([pos_x, pos_x + vx * 5], [pos_y, pos_y + vy * 5])
+
+        return scatters + orientation_lines + velocity_lines
 
     anim = FuncAnimation(fig, update, frames=max(len(r.position_history) for r in robots),
                          init_func=init, blit=True)
 
     plt.legend()
+    # plt.show()
     anim.save('sim_run.gif', fps=60)
 
     return anim
@@ -208,7 +254,39 @@ def generate_voronoi_graph(occupancy_grid):
                 if r < rows - 1 and c < cols - 1 and skeleton[r + 1, c + 1]:
                     graph.add_edge((r, c), (r + 1, c + 1))
 
-    return graph
+    prune_nodes = []
+    critical_nodes = []
+    for node in graph.nodes:
+        critical = False
+        if graph.degree[node] == 2:
+            neighbors = list(graph.neighbors(node))
+            if any(graph.degree[n] == 3 for n in neighbors):
+                # Check if it leads from known to unknown areas
+                leads_to_unknown = False
+                for dx in [-1, 0, 1]:
+                    for dy in [-1, 0, 1]:
+                        if dx == 0 and dy == 0:
+                            continue  # Skip the node itself
+                        x, y = node[0] + dx, node[1] + dy
+                        if 0 <= x < occupancy_grid.shape[0] and 0 <= y < occupancy_grid.shape[1]:
+                            if occupancy_grid[x, y] == -1:  # Check for unknown area
+                                leads_to_unknown = True
+                                break
+                    if leads_to_unknown:
+                        critical = True
+                        critical_nodes.append(node)
+                        break
+
+                # if not leads_to_unknown:
+                #     prune_nodes.append(node)
+        # if not critical:
+        #     prune_nodes.append(node)
+
+    # Remove pruned nodes
+    # for node in prune_nodes:
+    #     graph.remove_node(node)
+
+    return graph, critical_nodes
 
 
 def draw_occupancy(occupancy_grid, filename='occupancy.png'):

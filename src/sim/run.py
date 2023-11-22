@@ -18,10 +18,17 @@ env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_room
              n_robots=5, r_radius=2, rand_connections=0)
 env.scale_grid(1000, 1000)
 polygons = env.convert_to_poly()
+poly_arr = []
+for polygon in polygons:
+    n = len(polygon)
+    for i in range(n):
+        line = [polygon[i], polygon[(i + 1) % n]]
+        poly_arr.append(line)
+poly_arr = np.array(poly_arr)
 controller = RobotController(1, 500, steer_behavior=steer_behavior, avoid_behavior=avoidance_behavior)
 
 for robot in env.starting_points:
-    robots.append(Robot(robot, max_vel=2.5))
+    robots.append(Robot(robot, max_vel=2.5, num_vectors=20, angle_range=np.pi/4))
 
 all_intersections = []
 all_open_spaces = []
@@ -31,10 +38,11 @@ occupancy_grid = np.full((grid_height, grid_width), -1)
 
 for _ in range(100):
     for robot in robots:
-        intersections, open_space = robot.detect(polygons)
+        intersections, open_space = robot.detect(poly_arr)
         all_intersections += intersections
         all_open_spaces += open_space
-        robot.acceleration = controller.calculate_acceleration(robot, [500, 500], intersections)
+        robot.acceleration, robot.is_avoiding = (
+            controller.calculate_acceleration(robot, [500, 500], intersections))
         robot.update_velocity()
         robot.update_position()
 
