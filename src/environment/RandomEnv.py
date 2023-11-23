@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 
 import cairo
 
+from src.environment.QuadTree import QuadTree
+
 
 class Room:
     """
@@ -37,6 +39,7 @@ class SimEnv:
 
     def __init__(self, width, height, min_room_size, max_room_size, min_rooms, max_rooms, hallway_width, n_robots,
                  r_radius, rand_connections):
+        self.quadtree = None
         self.width = width
         self.height = height
         self.grid = [[0 for _ in range(width)] for _ in range(height)]
@@ -52,6 +55,17 @@ class SimEnv:
         self.connect_randomly(rand_connections)
         self.rand_connections = rand_connections
         self.starting_points = self.pick_starting_points(n_robots, r_radius)
+        self.polygon, self.polygon_arr = self.convert_to_poly()
+
+        # self.quadtree = QuadTree(width, height)
+        #
+        # self.populate_quadtree()
+
+    def populate_quadtree(self):
+        line_id = 0
+        for line in self.polygon_arr:
+            self.quadtree.insert_line(line, line_id)
+            line_id += 1
 
     def pick_starting_points(self, n_robot, r_radius):
         start_room = random.choice(self.rooms)
@@ -215,6 +229,9 @@ class SimEnv:
         self.width = new_width
         self.height = new_height
         self.grid = scaled_grid
+        self.polygon, self.polygon_arr = self.convert_to_poly()
+        self.quadtree = QuadTree(self.width, self.height)
+        self.populate_quadtree()
 
     def draw_env(self, filename='env.png'):
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, self.width * 10, self.height * 10)
@@ -274,11 +291,19 @@ class SimEnv:
 
         plt.savefig('env_poly.png')
 
-        return contour_vertices
+        poly_arr = []
+        for polygon in contour_vertices:
+            n = len(polygon)
+            for i in range(n):
+                line = [polygon[i], polygon[(i + 1) % n]]
+                poly_arr.append(line)
+        poly_arr = np.array(poly_arr)
+
+        return contour_vertices, poly_arr
 
 
 # random.seed(313)
-# env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=5,
+# env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=500, max_rooms=500, hallway_width=5,
 #              n_robots=5, r_radius=2, rand_connections=0)
 # env.print_grid()
 # env.draw_env('env.png')

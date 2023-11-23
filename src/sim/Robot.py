@@ -1,11 +1,11 @@
 import numpy as np
 
 # from src.environment.RandomEnv import SimEnv
-from src.sim.functions import rotate_vector, line_intersection, is_between, plot_detection, angle_between
+from src.sim.Functions import rotate_vector, line_intersection, is_between, plot_detection, angle_between
 
 
 class Robot:
-    def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, scale=50, max_vel=5, avoid_range=7):
+    def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, perception_range=50, max_vel=5, avoid_range=7):
         self.position = np.array(position)
         self.velocity = np.random.randint(-360.0, 360.0, size=(2,))
         velocity_magnitude = np.linalg.norm(self.velocity)
@@ -15,7 +15,7 @@ class Robot:
         self.orientation = np.copy(self.velocity)  # np.array([1, 0])
         self.angle_range = angle_range
         self.num_vectors = num_vectors
-        self.scale = scale
+        self.perception_range = perception_range
         self.perception_cone = self.get_perception_cone()
         self.max_vel = max_vel
         self.avoid_range = avoid_range
@@ -59,19 +59,21 @@ class Robot:
 
     # Generate vectors in a cone around the orientation vector.
     def get_perception_cone(self):
-        vectors = []
         orientation_angle = np.arctan2(self.orientation[1], self.orientation[0])
         start_angle = orientation_angle - self.angle_range / 2
         end_angle = orientation_angle + self.angle_range / 2
         angles = np.linspace(start_angle, end_angle, self.num_vectors)
 
-        for angle in angles:
-            vector = rotate_vector(self.orientation, angle - orientation_angle)
-            normalized_vector = vector / np.linalg.norm(vector)
-            scaled_vector = normalized_vector * self.scale
-            vectors.append(scaled_vector)
+        vectors = rotate_vector(self.orientation, angles - orientation_angle)
 
-        return vectors
+        # Normalize the vectors
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        normalized_vectors = vectors / norms
+
+        # Scale the vectors
+        scaled_vectors = normalized_vectors * self.perception_range
+
+        return scaled_vectors
 
     # Detects closest intersections with polygons in the perception cone.
     def detect(self, polygons):

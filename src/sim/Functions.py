@@ -1,3 +1,5 @@
+from collections import deque
+
 import cairo
 import numpy as np
 from matplotlib import pyplot as plt
@@ -8,12 +10,21 @@ import networkx as nx
 
 
 # Rotate a 2D vector by a given angle.
-def rotate_vector(vector, angle):
+def rotate_vector(vector, angles):
+    cos_angles = np.cos(angles)
+    sin_angles = np.sin(angles)
+
     rotation_matrix = np.array([
-        [np.cos(angle), -np.sin(angle)],
-        [np.sin(angle), np.cos(angle)]
+        [cos_angles, -sin_angles],
+        [sin_angles, cos_angles]
     ])
-    return np.dot(rotation_matrix, vector)
+
+    # Adjusting the shapes for broadcasting
+    rotation_matrix = np.transpose(rotation_matrix, (2, 0, 1))
+    vector = vector.reshape((2, 1))
+
+    # Broadcasting the dot product over the angles
+    return np.dot(rotation_matrix, vector).reshape(-1, 2)
 
 
 def angle_between(v1, v2):
@@ -156,8 +167,6 @@ def animate_paths(robots, polygons):
 # Just converts continuous coordinates to occupancy grid coordinates
 def continuous_to_grid(points, env_size, grid_size):
     points = np.array(points)
-    env_size = np.array(env_size, dtype=float)
-    grid_size = np.array(grid_size)
 
     grid_points = (points / env_size) * grid_size
     grid_points = np.clip(grid_points, [0, 0], grid_size - 1).astype(int)
@@ -217,74 +226,135 @@ def animate_sim(robots, polygons):
 
 
 def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size):
-    grid_intersections = continuous_to_grid(intersections, env_size, grid_size)
 
-    occupancy_grid[grid_intersections[:, 0], grid_intersections[:, 1]] = 0
+    if len(intersections) > 0:
+        grid_intersections = continuous_to_grid(intersections, env_size, grid_size)
 
-    grid_open_spaces = continuous_to_grid(open_spaces, env_size, grid_size)
+        occupancy_grid[grid_intersections[:, 0], grid_intersections[:, 1]] = 0
 
-    occupancy_grid[grid_open_spaces[:, 0], grid_open_spaces[:, 1]] = 1
+    if len(open_spaces) > 0:
+        grid_open_spaces = continuous_to_grid(open_spaces, env_size, grid_size)
+
+        occupancy_grid[grid_open_spaces[:, 0], grid_open_spaces[:, 1]] = 1
 
     return occupancy_grid
 
 
+def is_accessible_to_frontier(node, occupancy_grid, max_distance=5):
+    # Perform a BFS to find if there is accessible frontier space within distance
+    visited = set()
+    queue = deque([(node, 0)])  # (node, distance)
+
+    while queue:
+        (r, c), distance = queue.popleft()
+        if distance > max_distance:
+            break  # Limit the search to distance
+
+        # Check for frontier space
+        if occupancy_grid[r][c] == -1:
+            return True
+
+        # Add neighbors to the queue
+        for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
+            if (len(occupancy_grid) > nr >= 0 != occupancy_grid[nr][nc] and 0 <= nc < len(occupancy_grid[0])
+                    and (nr, nc) not in visited):
+                visited.add((nr, nc))
+                queue.append(((nr, nc), distance + 1))
+
+    return False
+
+
+def find_critical_nodes(graph, occupancy_grid):
+    critical_nodes = []
+    segments = []
+
+    # Identify leaf nodes
+    leaf_nodes = [node for node in graph.nodes if graph.degree[node] == 1]
+
+    for leaf in leaf_nodes:
+        current = leaf
+        path = [current]
+        frontier_found = False
+
+        while True:
+            # Find the next node in the path
+            neighbors = list(graph.neighbors(current))
+            next_node = None
+            for neighbor in neighbors:
+                if neighbor not in path:
+                    next_node = neighbor
+                    break
+
+            if next_node is None:
+                break  # No next node, end of path
+
+            path.append(next_node)
+            current = next_node
+
+            # Check for frontier adjacency if not already found
+            if not frontier_found:
+                frontier_found = is_accessible_to_frontier(current, occupancy_grid)
+
+            # Check if current node is a critical node
+            if frontier_found and graph.degree[current] == 2 and any(
+                    graph.degree[neighbor] == 3 for neighbor in graph.neighbors(current)):
+                critical_nodes.append(current)
+                segments.append(path)
+                break
+
+    return critical_nodes, segments
+
+
+class UnionFind:
+    def __init__(self):
+        self.parent = {}
+
+    def find(self, node):
+        if node not in self.parent:
+            self.parent[node] = node
+            return node
+        if self.parent[node] == node:
+            return node
+        self.parent[node] = self.find(self.parent[node])
+        return self.parent[node]
+
+    def union(self, node1, node2):
+        root1 = self.find(node1)
+        root2 = self.find(node2)
+        if root1 != root2:
+            self.parent[root2] = root1
+            return True
+        return False
+
+
 def generate_voronoi_graph(occupancy_grid):
     distance_map = distance_transform_edt(occupancy_grid >= 0)
-
     skeleton = skeletonize(distance_map > 0)
-
     graph = nx.Graph()
+    uf = UnionFind()
+
     rows, cols = skeleton.shape
+    nodes = set()
+    edges = set()
+
+    # Collect nodes and potential edges
     for r in range(rows):
         for c in range(cols):
             if skeleton[r, c]:
-                graph.add_node((r, c))
-                # Horizontal and vertical neighbors
-                if r > 0 and skeleton[r - 1, c]:
-                    graph.add_edge((r, c), (r - 1, c))
-                if c > 0 and skeleton[r, c - 1]:
-                    graph.add_edge((r, c), (r, c - 1))
-                # Diagonal neighbors
-                if r > 0 and c > 0 and skeleton[r - 1, c - 1]:
-                    graph.add_edge((r, c), (r - 1, c - 1))
-                if r > 0 and c < cols - 1 and skeleton[r - 1, c + 1]:
-                    graph.add_edge((r, c), (r - 1, c + 1))
-                if r < rows - 1 and c > 0 and skeleton[r + 1, c - 1]:
-                    graph.add_edge((r, c), (r + 1, c - 1))
-                if r < rows - 1 and c < cols - 1 and skeleton[r + 1, c + 1]:
-                    graph.add_edge((r, c), (r + 1, c + 1))
+                nodes.add((r, c))
+                for dr, dc in [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < rows and 0 <= nc < cols and skeleton[nr, nc]:
+                        edge = ((r, c), (nr, nc))
+                        edges.add(edge)
 
-    prune_nodes = []
-    critical_nodes = []
-    for node in graph.nodes:
-        critical = False
-        if graph.degree[node] == 2:
-            neighbors = list(graph.neighbors(node))
-            if any(graph.degree[n] == 3 for n in neighbors):
-                # Check if it leads from known to unknown areas
-                leads_to_unknown = False
-                for dx in [-1, 0, 1]:
-                    for dy in [-1, 0, 1]:
-                        if dx == 0 and dy == 0:
-                            continue  # Skip the node itself
-                        x, y = node[0] + dx, node[1] + dy
-                        if 0 <= x < occupancy_grid.shape[0] and 0 <= y < occupancy_grid.shape[1]:
-                            if occupancy_grid[x, y] == -1:  # Check for unknown area
-                                leads_to_unknown = True
-                                break
-                    if leads_to_unknown:
-                        critical = True
-                        critical_nodes.append(node)
-                        break
+    # Add nodes and edges to the graph
+    graph.add_nodes_from(nodes)
+    for edge in edges:
+        if uf.union(*edge):
+            graph.add_edge(*edge)
 
-                # if not leads_to_unknown:
-                #     prune_nodes.append(node)
-        # if not critical:
-        #     prune_nodes.append(node)
-
-    # Remove pruned nodes
-    # for node in prune_nodes:
-    #     graph.remove_node(node)
+    critical_nodes, segments = find_critical_nodes(graph, occupancy_grid)
 
     return graph, critical_nodes
 
@@ -310,5 +380,3 @@ def draw_occupancy(occupancy_grid, filename='occupancy.png'):
             ctx.fill()
 
     surface.write_to_png(filename)
-
-
