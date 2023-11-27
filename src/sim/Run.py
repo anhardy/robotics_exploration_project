@@ -19,17 +19,17 @@ robots = []
 
 env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=5,
              n_robots=5, r_radius=2, rand_connections=0)
-env.scale_grid(1000, 1000)
+env.scale_grid(500, 500)
 
 controller = RobotController(1, 500, steer_behavior=steer_behavior, avoid_behavior=avoidance_behavior)
 
 for robot in env.starting_points:
-    robots.append(Robot(robot, max_vel=2.5, num_vectors=20, angle_range=np.pi/5))
+    robots.append(Robot(robot, max_vel=2.5, num_vectors=20, angle_range=np.pi/5, perception_range=30))
 
 all_intersections = []
 all_open_spaces = []
-grid_height = 1000
-grid_width = 1000
+grid_height = 500
+grid_width = 500
 occupancy_grid = np.full((grid_height, grid_width), -1)
 poly_arr = env.polygon_arr
 polygons = env.polygon
@@ -54,7 +54,7 @@ for i in range(100):
     occupancy_grid = update_grid(occupancy_grid, all_intersections, all_open_spaces, env_size,
                                  grid_size)
 
-    if i % 10:
+    if i % 10 == 0:
         graph, critical_points = generate_voronoi_graph(occupancy_grid)
     # plt.clf()
     # plt.cla()

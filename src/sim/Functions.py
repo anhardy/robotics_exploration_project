@@ -227,15 +227,15 @@ def animate_sim(robots, polygons):
 
 def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size):
 
-    if len(intersections) > 0:
-        grid_intersections = continuous_to_grid(intersections, env_size, grid_size)
-
-        occupancy_grid[grid_intersections[:, 0], grid_intersections[:, 1]] = 0
-
     if len(open_spaces) > 0:
         grid_open_spaces = continuous_to_grid(open_spaces, env_size, grid_size)
 
         occupancy_grid[grid_open_spaces[:, 0], grid_open_spaces[:, 1]] = 1
+
+    if len(intersections) > 0:
+        grid_intersections = continuous_to_grid(intersections, env_size, grid_size)
+
+        occupancy_grid[grid_intersections[:, 0], grid_intersections[:, 1]] = 0
 
     return occupancy_grid
 
