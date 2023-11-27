@@ -226,7 +226,6 @@ def animate_sim(robots, polygons):
 
 
 def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size):
-
     if len(open_spaces) > 0:
         grid_open_spaces = continuous_to_grid(open_spaces, env_size, grid_size)
 
@@ -238,6 +237,31 @@ def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size)
         occupancy_grid[grid_intersections[:, 0], grid_intersections[:, 1]] = 0
 
     return occupancy_grid
+
+
+# Try to ignore intersecting edges or edges that risk collision
+def line_close_to_wall(edge, occupancy_grid):
+    (x0, y0), (x1, y1) = edge
+    dx = abs(x1 - x0)
+    dy = -abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx + dy
+
+    while True:
+        if occupancy_grid[x0, y0] == 0:  # Wall cell found
+            return True
+        if x0 == x1 and y0 == y1:
+            break
+        e2 = 2 * err
+        if e2 >= dy:
+            err += dy
+            x0 += sx
+        if e2 <= dx:
+            err += dx
+            y0 += sy
+
+    return False
 
 
 def is_accessible_to_frontier(node, occupancy_grid, max_distance=50):
@@ -255,7 +279,8 @@ def is_accessible_to_frontier(node, occupancy_grid, max_distance=50):
             return True
 
         # Add neighbors to the queue
-        for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
+        for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1),
+                       (r - 1, c - 1), (r - 1, c + 1), (r + 1, c - 1), (r + 1, c + 1)]:
             if (len(occupancy_grid) > nr >= 0 != occupancy_grid[nr][nc] and 0 <= nc < len(occupancy_grid[0])
                     and (nr, nc) not in visited):
                 visited.add((nr, nc))
@@ -329,7 +354,7 @@ class UnionFind:
 
 def generate_voronoi_graph(occupancy_grid):
     distance_map = distance_transform_edt(occupancy_grid >= 0)
-    skeleton = skeletonize(distance_map > 0.75)
+    skeleton = skeletonize(distance_map > 0)
     graph = nx.Graph()
     uf = UnionFind()
 
@@ -351,7 +376,7 @@ def generate_voronoi_graph(occupancy_grid):
     # Add nodes and edges to the graph
     graph.add_nodes_from(nodes)
     for edge in edges:
-        if uf.union(*edge):
+        if uf.union(*edge) and not line_close_to_wall(edge, occupancy_grid):
             graph.add_edge(*edge)
 
     critical_nodes, segments = find_critical_nodes(graph, occupancy_grid)
