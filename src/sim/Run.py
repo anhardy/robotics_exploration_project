@@ -19,7 +19,7 @@ robots = []
 
 env = SimEnv(width=250, height=250, min_room_size=25, max_room_size=50, min_rooms=20, max_rooms=20, hallway_width=5,
              n_robots=5, r_radius=2, rand_connections=0)
-env.scale_grid(500, 500)
+env.scale_grid(750, 750)
 
 controller = RobotController(1, 500, steer_behavior=steer_behavior, avoid_behavior=avoidance_behavior)
 
@@ -28,8 +28,8 @@ for robot in env.starting_points:
 
 all_intersections = []
 all_open_spaces = []
-grid_height = 500
-grid_width = 500
+grid_height = 750
+grid_width = 750
 occupancy_grid = np.full((grid_height, grid_width), -1)
 poly_arr = env.polygon_arr
 polygons = env.polygon

@@ -240,7 +240,7 @@ def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size)
     return occupancy_grid
 
 
-def is_accessible_to_frontier(node, occupancy_grid, max_distance=5):
+def is_accessible_to_frontier(node, occupancy_grid, max_distance=50):
     # Perform a BFS to find if there is accessible frontier space within distance
     visited = set()
     queue = deque([(node, 0)])  # (node, distance)
@@ -329,7 +329,7 @@ class UnionFind:
 
 def generate_voronoi_graph(occupancy_grid):
     distance_map = distance_transform_edt(occupancy_grid >= 0)
-    skeleton = skeletonize(distance_map > 0)
+    skeleton = skeletonize(distance_map > 0.75)
     graph = nx.Graph()
     uf = UnionFind()
 
