@@ -54,10 +54,13 @@ for i in range(100):
     occupancy_grid, frontier_grid = update_grid(occupancy_grid, all_intersections, all_open_spaces, env_size,
                                                 grid_size)
 
+    # TODO possibly better way of determining when to do an update of the graph + reassignment of segments/frontiers
     if i % 10 == 0:
         graph, critical_points, segments, nodes = generate_voronoi_graph(occupancy_grid)
         frontier_targets = assign_frontier_targets_to_segments(frontier_grid, segments)
-        costs = calculate_costs(graph, robots, segments, nodes)
+        # TODO only do perception on robots currently assigned to a task. Need to initialize robots differently.
+        #   ALL robots should still be considered when updating the graph in case assignments change
+        assignments = calculate_costs(graph, robots, segments, nodes)
         # for robot in robots:
         #     closest_node =
     # plt.clf()
@@ -86,7 +89,7 @@ for i in range(100):
 
 
 draw_occupancy(occupancy_grid)
-draw_frontier_grid(frontier_grid)
+draw_frontier_grid(frontier_grid, occupancy_grid)
 plt.clf()
 plt.cla()
 # plt.imshow(np.transpose(occupancy_grid), cmap='gray', alpha=0.5)

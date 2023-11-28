@@ -285,29 +285,29 @@ def line_close_to_wall(edge, occupancy_grid):
     return False
 
 
-def is_accessible_to_frontier(node, occupancy_grid, max_distance=25):
-    # Perform a BFS to find if there is accessible frontier space within distance
-    visited = set()
-    queue = deque([(node, 0)])  # (node, distance)
-
-    while queue:
-        (r, c), distance = queue.popleft()
-        if distance > max_distance:
-            break  # Limit the search to distance
-
-        # Check for frontier space
-        if occupancy_grid[r][c] == -1:
-            return True
-
-        # Add neighbors to the queue
-        for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1),
-                       (r - 1, c - 1), (r - 1, c + 1), (r + 1, c - 1), (r + 1, c + 1)]:
-            if (len(occupancy_grid) > nr >= 0 != occupancy_grid[nr][nc] and 0 <= nc < len(occupancy_grid[0])
-                    and (nr, nc) not in visited):
-                visited.add((nr, nc))
-                queue.append(((nr, nc), distance + 1))
-
-    return False
+# def is_accessible_to_frontier(node, occupancy_grid, max_distance=25):
+#     # Perform a BFS to find if there is accessible frontier space within distance
+#     visited = set()
+#     queue = deque([(node, 0)])  # (node, distance)
+#
+#     while queue:
+#         (r, c), distance = queue.popleft()
+#         if distance > max_distance:
+#             break  # Limit the search to distance
+#
+#         # Check for frontier space
+#         if occupancy_grid[r][c] == -1:
+#             return True
+#
+#         # Add neighbors to the queue
+#         for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1),
+#                        (r - 1, c - 1), (r - 1, c + 1), (r + 1, c - 1), (r + 1, c + 1)]:
+#             if (len(occupancy_grid) > nr >= 0 != occupancy_grid[nr][nc] and 0 <= nc < len(occupancy_grid[0])
+#                     and (nr, nc) not in visited):
+#                 visited.add((nr, nc))
+#                 queue.append(((nr, nc), distance + 1))
+#
+#     return False
 
 
 def find_critical_nodes(graph, occupancy_grid):
@@ -320,7 +320,7 @@ def find_critical_nodes(graph, occupancy_grid):
     for leaf in leaf_nodes:
         current = leaf
         path = [current]
-        frontier_found = False
+        # frontier_found = False
 
         while True:
             # Find the next node in the path
@@ -338,11 +338,11 @@ def find_critical_nodes(graph, occupancy_grid):
             current = next_node
 
             # Check for frontier adjacency if not already found
-            if not frontier_found:
-                frontier_found = is_accessible_to_frontier(current, occupancy_grid)
+            # if not frontier_found:
+            #     frontier_found = is_accessible_to_frontier(current, occupancy_grid)
 
             # Check if current node is a critical node
-            if frontier_found and graph.degree[current] == 2 and any(
+            if graph.degree[current] == 2 and any(
                     graph.degree[neighbor] == 3 for neighbor in graph.neighbors(current)):
                 if current not in critical_nodes:
                     segments.append(path)
@@ -352,6 +352,7 @@ def find_critical_nodes(graph, occupancy_grid):
     return critical_nodes, segments
 
 
+# Just used to eliminate loops
 class UnionFind:
     def __init__(self):
         self.parent = {}
@@ -375,6 +376,8 @@ class UnionFind:
 
 
 def assign_frontier_targets_to_segments(frontier_grid, segments):
+    """Finds unexplored space adjacent to observed open spaces and labels it as frontier space, then assigns this
+    frontier space to the closest segment."""
     node_coordinates = []
     segment_indices = []
     for i, segment in enumerate(segments):
@@ -401,11 +404,19 @@ def assign_frontier_targets_to_segments(frontier_grid, segments):
     return target_coordinates
 
 
+# Needed for nx A*
 def heuristic(a, b):
     return np.linalg.norm(np.array(a) - np.array(b))
 
 
 def calculate_costs(graph, robots, segments, nodes):
+    """
+    Calculates costs, discounting when the agent is already present in the segment, and assigns segments to robots
+    using the Hungarian method.
+
+    Returns a dictionary keyed to each robot, with the value of each entry being the index corresponding to the segment
+    list
+    """
     costs = {}
     for robot in robots:
         nodes = np.array(list(nodes))
@@ -430,7 +441,10 @@ def calculate_costs(graph, robots, segments, nodes):
 
     num_robots = len(robots)
     num_segments = len(segments)
-    cost_matrix = np.zeros((num_robots, num_segments))
+    max_dim = max(num_robots, num_segments)
+
+    # Pad matrix if less segments than robots
+    cost_matrix = np.full((max_dim, max_dim), 99999)
 
     for i, robot in enumerate(robots):
         for j in range(num_segments):
@@ -439,7 +453,7 @@ def calculate_costs(graph, robots, segments, nodes):
     # Hungarian method
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
-    assignments = {robots[i]: [col_ind[i]] for i in range(num_robots)}
+    assignments = {robots[i]: [col_ind[i]] for i in range(num_robots) if col_ind[i] < num_segments}
     return assignments
 
 
@@ -479,29 +493,32 @@ def generate_voronoi_graph(occupancy_grid):
     return graph, critical_nodes, segments, nodes
 
 
-def draw_frontier_grid(frontier_grid, filename='frontier_grid.png'):
-    cell_size = 10
-
-    height, width = frontier_grid.shape
-    surface_height = height * cell_size
-    surface_width = width * cell_size
+def draw_frontier_grid(frontier_grid, occupancy_grid, filename='frontier_grid.png'):
+    occupancy_grid = np.flip(occupancy_grid, axis=1)
     frontier_grid = np.flip(frontier_grid, axis=1)
-    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, surface_width, surface_height)
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, occupancy_grid.shape[0] * 10, occupancy_grid.shape[1] * 10)
     ctx = cairo.Context(surface)
 
-    colors = {
-        0: (0, 0, 0),
-        1: (1, 0, 0),
-    }
+    # Draw the grid
+    for x in range(occupancy_grid.shape[0]):
+        for y in range(occupancy_grid.shape[1]):
+            if occupancy_grid[x][y] == 0:
+                ctx.rectangle(x * 10, y * 10, 10, 10)
+                ctx.set_source_rgb(0, 0, 0)
+            elif occupancy_grid[x][y] == 1:
+                ctx.rectangle(x * 10, y * 10, 10, 10)
+                ctx.set_source_rgb(1, 1, 1)
+            else:
+                ctx.rectangle(x * 10, y * 10, 10, 10)
+                ctx.set_source_rgb(0.5, 0.5, 0.5)
+            if frontier_grid[x, y] == 1:
+                ctx.rectangle(x * 10, y * 10, 10, 10)
+                ctx.set_source_rgb(1, 0, 0)
 
-    for i in range(height):
-        for j in range(width):
-            cell_value = frontier_grid[i, j]
-            ctx.set_source_rgb(*colors[cell_value])
-            ctx.rectangle(i * cell_size, j * cell_size, cell_size, cell_size)
             ctx.fill()
 
     surface.write_to_png(filename)
+
 
 
 def draw_occupancy(occupancy_grid, filename='occupancy.png'):
