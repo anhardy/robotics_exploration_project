@@ -34,8 +34,8 @@ occupancy_grid = np.full((grid_height, grid_width), -1)
 poly_arr = env.polygon_arr
 polygons = env.polygon
 
-# pr = cProfile.Profile()
-# pr.enable()
+pr = cProfile.Profile()
+pr.enable()
 
 # Predefining to reduce computation
 env_size = np.array((env.width, env.height), dtype=float)
@@ -60,7 +60,7 @@ for i in range(100):
         frontier_targets = assign_frontier_targets_to_segments(frontier_grid, segments)
         # TODO only do perception on robots currently assigned to a task. Need to initialize robots differently.
         #   ALL robots should still be considered when updating the graph in case assignments change
-        assignments = calculate_costs(graph, robots, segments, nodes)
+        assignments = calculate_costs(graph, robots, segments, frontier_targets, nodes)
         # for robot in robots:
         #     closest_node =
     # plt.clf()
@@ -78,14 +78,14 @@ for i in range(100):
     # plt.grid(False)  # Turn off the grid if not needed
     # plt.show()
 
-# pr.disable()
-#
-# s = StringIO()
-# ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
-#
-# ps.print_stats()
-#
-# print(s.getvalue())
+pr.disable()
+
+s = StringIO()
+ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
+
+ps.print_stats()
+
+print(s.getvalue())
 
 
 draw_occupancy(occupancy_grid)

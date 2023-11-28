@@ -408,8 +408,7 @@ def assign_frontier_targets_to_segments(frontier_grid, segments):
 def heuristic(a, b):
     return np.linalg.norm(np.array(a) - np.array(b))
 
-
-def calculate_costs(graph, robots, segments, nodes):
+def calculate_costs(graph, robots, segments, frontier_targets, nodes):
     """
     Calculates costs, discounting when the agent is already present in the segment, and assigns segments to robots
     using the Hungarian method.
@@ -419,40 +418,46 @@ def calculate_costs(graph, robots, segments, nodes):
     """
     costs = {}
     for robot in robots:
-        nodes = np.array(list(nodes))
-        distances = np.linalg.norm(nodes - robot.position, axis=1)
-
+        nodes_array = np.array(list(nodes))
+        distances = np.linalg.norm(nodes_array - robot.position, axis=1)
         closest_node_index = np.argmin(distances)
+        position = tuple(nodes_array[closest_node_index])
 
-        position = tuple(nodes[closest_node_index])
         robot_costs = {}
         for i, segment in enumerate(segments):
-            segment_start = segment[-1]
-            # Reduced cost if robot in segment
+            if len(frontier_targets) == 0:
+                continue
+            # Find closest frontier cell within the segment
+            closest_frontier_cell = tuple(min(frontier_targets[i], key=lambda cell: np.linalg.norm(np.array(cell) - robot.position)))
+
+            # Add the frontier cell to the graph and connect it to the nearest node in the segment
+            if closest_frontier_cell not in graph:
+                graph.add_node(closest_frontier_cell)
+                nearest_node_in_segment = tuple(min(segment, key=lambda node: np.linalg.norm(np.array(node) - np.array(closest_frontier_cell))))
+                graph.add_edge(closest_frontier_cell, nearest_node_in_segment)
+
+            # Calculate path cost to the nearest frontier cell
             try:
-                path = nx.astar_path(graph, position, segment_start, heuristic=heuristic)
-                path_cost = len(path) - 1
-                if position in segment:
-                    path_cost *= 0.1  # TODO experiment with other discounts
-            except Exception as e:
-                path_cost = 99999
+                path = nx.astar_path(graph, position, closest_frontier_cell, heuristic=heuristic)
+                path_cost = len(path)
+            except nx.NetworkXNoPath:
+                path_cost = 99999  # Assign a high cost in case of no path
+
             robot_costs[i] = path_cost
+            graph.remove_nodes_from([closest_frontier_cell])
+
         costs[robot] = robot_costs
 
     num_robots = len(robots)
     num_segments = len(segments)
     max_dim = max(num_robots, num_segments)
-
-    # Pad matrix if less segments than robots
     cost_matrix = np.full((max_dim, max_dim), 99999)
 
     for i, robot in enumerate(robots):
         for j in range(num_segments):
-            cost_matrix[i, j] = costs[robot].get(j, 99999)  # Use a high cost for unassigned tasks
+            cost_matrix[i, j] = costs[robot].get(j, 99999)
 
-    # Hungarian method
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
-
     assignments = {robots[i]: [col_ind[i]] for i in range(num_robots) if col_ind[i] < num_segments}
     return assignments
 
