@@ -4,3 +4,4 @@ matplotlib~=3.8.2
 networkx~=3.2.1
 scipy~=1.11.4
 scikit-image~=0.22.0
+pycairo~=1.25.1

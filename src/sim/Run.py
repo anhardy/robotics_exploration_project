@@ -7,7 +7,7 @@ from src.environment.RandomEnv import SimEnv
 from src.sim.behaviors.steer_behavior import steer_behavior
 from src.sim.behaviors.avoidance_behavior import avoidance_behavior
 from src.sim.Functions import plot_robot_paths, animate_paths, animate_sim, update_grid, generate_voronoi_graph, \
-    draw_occupancy
+    draw_occupancy, draw_frontier_grid, assign_frontier_targets_to_segments, calculate_costs
 from src.sim.Robot import Robot
 from src.sim.RobotController import RobotController
 from scipy.spatial import Voronoi, voronoi_plot_2d
@@ -24,7 +24,7 @@ env.scale_grid(750, 750)
 controller = RobotController(1, 500, steer_behavior=steer_behavior, avoid_behavior=avoidance_behavior)
 
 for robot in env.starting_points:
-    robots.append(Robot(robot, max_vel=2.5, num_vectors=20, angle_range=np.pi/5, perception_range=30))
+    robots.append(Robot(robot, max_vel=2.5, num_vectors=20, angle_range=np.pi / 5, perception_range=30))
 
 all_intersections = []
 all_open_spaces = []
@@ -51,11 +51,15 @@ for i in range(100):
         robot.update_velocity()
         robot.update_position()
 
-    occupancy_grid = update_grid(occupancy_grid, all_intersections, all_open_spaces, env_size,
-                                 grid_size)
+    occupancy_grid, frontier_grid = update_grid(occupancy_grid, all_intersections, all_open_spaces, env_size,
+                                                grid_size)
 
     if i % 10 == 0:
-        graph, critical_points = generate_voronoi_graph(occupancy_grid)
+        graph, critical_points, segments, nodes = generate_voronoi_graph(occupancy_grid)
+        frontier_targets = assign_frontier_targets_to_segments(frontier_grid, segments)
+        costs = calculate_costs(graph, robots, segments, nodes)
+        # for robot in robots:
+        #     closest_node =
     # plt.clf()
     # plt.cla()
     # plt.imshow(np.transpose(occupancy_grid), cmap='gray', alpha=0.5)
@@ -82,6 +86,7 @@ for i in range(100):
 
 
 draw_occupancy(occupancy_grid)
+draw_frontier_grid(frontier_grid)
 plt.clf()
 plt.cla()
 # plt.imshow(np.transpose(occupancy_grid), cmap='gray', alpha=0.5)
@@ -99,7 +104,6 @@ for point in critical_points:
 plt.grid(False)  # Turn off the grid if not needed
 plt.savefig('skeleton.png')
 plt.show()
-
 
 plot_robot_paths(robots, polygons)
 
