@@ -7,7 +7,7 @@ from src.environment.RandomEnv import SimEnv
 from src.sim.behaviors.steer_behavior import steer_behavior
 from src.sim.behaviors.avoidance_behavior import avoidance_behavior
 from src.sim.Functions import plot_robot_paths, animate_paths, animate_sim, update_grid, generate_voronoi_graph, \
-    draw_occupancy, draw_frontier_grid, assign_frontier_targets_to_segments, calculate_costs
+    draw_occupancy, draw_frontier_grid, assign_frontier_targets_to_segments, calculate_costs, plot_segment_with_frontier
 from src.sim.Robot import Robot
 from src.sim.RobotController import RobotController
 from scipy.spatial import Voronoi, voronoi_plot_2d
@@ -90,6 +90,7 @@ for i in range(100):
 
 draw_occupancy(occupancy_grid)
 draw_frontier_grid(frontier_grid, occupancy_grid)
+plot_segment_with_frontier(0, segments, frontier_targets)
 plt.clf()
 plt.cla()
 # plt.imshow(np.transpose(occupancy_grid), cmap='gray', alpha=0.5)
@@ -99,7 +100,6 @@ for polygon in polygons:
     plt.plot(x, y, 'b-')
 
 nx.draw_networkx_nodes(graph, pos={n: n for n in graph.nodes}, node_color='blue', node_size=1)
-# Edges
 nx.draw_networkx_edges(graph, pos={n: n for n in graph.nodes}, edge_color='red')
 for point in critical_points:
     plt.scatter(*point, color='green', s=10)

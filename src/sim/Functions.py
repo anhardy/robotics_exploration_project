@@ -493,6 +493,27 @@ def generate_voronoi_graph(occupancy_grid):
     return graph, critical_nodes, segments, nodes
 
 
+def plot_segment_with_frontier(segment_index, segments, frontier_targets):
+    plt.clf()
+    plt.cla()
+    if segment_index >= len(segments) or segment_index >= len(frontier_targets):
+        print("Invalid segment index")
+        return
+
+    segment = segments[segment_index]
+    frontier_space = frontier_targets[segment_index]
+
+    # Plotting the graph segment
+    x, y = zip(*segment)
+    plt.plot(x, y, marker='o', markersize=5, linestyle='-', color='blue', label='Segment')
+
+    # Plotting the frontier space
+    fx, fy = zip(*frontier_space)
+    plt.scatter(fx, fy, marker='x', color='red', label='Frontier Space')
+    plt.legend()
+    plt.savefig('segment_and_frontier.png')
+
+
 def draw_frontier_grid(frontier_grid, occupancy_grid, filename='frontier_grid.png'):
     occupancy_grid = np.flip(occupancy_grid, axis=1)
     frontier_grid = np.flip(frontier_grid, axis=1)
@@ -518,7 +539,6 @@ def draw_frontier_grid(frontier_grid, occupancy_grid, filename='frontier_grid.pn
             ctx.fill()
 
     surface.write_to_png(filename)
-
 
 
 def draw_occupancy(occupancy_grid, filename='occupancy.png'):
