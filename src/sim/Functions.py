@@ -1,6 +1,7 @@
 from collections import deque
 
 import cairo
+import matplotlib
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -175,7 +176,7 @@ def continuous_to_grid(points, env_size, grid_size):
     return grid_points
 
 
-def animate_sim(robots, polygons):
+def animate_sim(robots, polygons, occupancy_grid):
     plt.clf()
     fig, ax = plt.subplots()
 
@@ -185,6 +186,14 @@ def animate_sim(robots, polygons):
     # Lines for orientation and velocity vectors
     orientation_lines = [ax.plot([], [], 'r-', linewidth=1)[0] for _ in robots]
     velocity_lines = [ax.plot([], [], 'g-', linewidth=1)[0] for _ in robots]
+
+    # path_lines = [ax.plot([], [], 'b-', linewidth=1)[0] for _ in robots]
+
+    cmap = matplotlib.colors.ListedColormap(['black', 'gray', 'white'])
+    bounds = [-1.5, -0.5, 0.5, 1.5]
+    norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+
+    occupancy_img = ax.imshow(occupancy_grid[0], cmap=cmap, norm=norm, interpolation='nearest', alpha=0.5)
 
     # Plot polygons
     for polygon in polygons:
@@ -196,6 +205,8 @@ def animate_sim(robots, polygons):
         return scatters + orientation_lines + velocity_lines
 
     def update(frame):
+        if frame < len(occupancy_grid):
+            occupancy_img.set_data(np.transpose(occupancy_grid[frame]))
         for i, robot in enumerate(robots):
             # Update robot positions
             if frame < len(robot.position_history):
@@ -214,7 +225,14 @@ def animate_sim(robots, polygons):
                 pos_x, pos_y = robot.position_history[frame]
                 velocity_lines[i].set_data([pos_x, pos_x + vx * 5], [pos_y, pos_y + vy * 5])
 
-        return scatters + orientation_lines + velocity_lines
+            # if frame < len(robot.path_history):
+            #     path = robot.path_history[frame]
+            #     position = np.expand_dims(robot.position_history[frame], 0)
+            #     path_history = np.concatenate([position, path])
+            #     pos_x, pos_y = zip(*path_history)
+            #     path_lines[i].set_data(pos_x, pos_y)
+
+        return [occupancy_img] + scatters + orientation_lines + velocity_lines  # + path_lines
 
     anim = FuncAnimation(fig, update, frames=max(len(r.position_history) for r in robots),
                          init_func=init, blit=True)
@@ -226,16 +244,32 @@ def animate_sim(robots, polygons):
     return anim
 
 
-def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size):
+def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size, pad_range=3):
     if len(open_spaces) > 0:
         grid_open_spaces = continuous_to_grid(open_spaces, env_size, grid_size)
 
-        occupancy_grid[grid_open_spaces[:, 0], grid_open_spaces[:, 1]] = 1
+        update_mask = occupancy_grid[grid_open_spaces[:, 0], grid_open_spaces[:, 1]] != 0
+        valid_updates = grid_open_spaces[update_mask]
+        occupancy_grid[valid_updates[:, 0], valid_updates[:, 1]] = 1
 
     if len(intersections) > 0:
         grid_intersections = continuous_to_grid(intersections, env_size, grid_size)
 
-        occupancy_grid[grid_intersections[:, 0], grid_intersections[:, 1]] = 0
+        pad_grid = np.zeros_like(occupancy_grid, dtype=bool)
+        for dx in range(-pad_range, pad_range + 1):
+            for dy in range(-pad_range, pad_range + 1):
+                shifted_intersections = grid_intersections + [dx, dy]
+
+                # Filter out points that are outside the grid boundaries
+                valid_points = (shifted_intersections[:, 0] >= 0) & (shifted_intersections[:, 0] < grid_size[0]) & \
+                               (shifted_intersections[:, 1] >= 0) & (shifted_intersections[:, 1] < grid_size[1])
+                valid_shifted_intersections = shifted_intersections[valid_points]
+
+                # Update the pad_grid
+                pad_grid[valid_shifted_intersections[:, 0], valid_shifted_intersections[:, 1]] = True
+
+        # Update the occupancy grid with the padded intersections
+        occupancy_grid[pad_grid] = 0
 
     frontier_grid = update_frontier_grid(occupancy_grid)
 
@@ -349,7 +383,7 @@ def find_critical_nodes(graph, occupancy_grid):
                 critical_nodes.add(current)
                 break
 
-    return critical_nodes, segments
+    return critical_nodes, segments, leaf_nodes
 
 
 # Just used to eliminate loops
@@ -387,6 +421,8 @@ def assign_frontier_targets_to_segments(frontier_grid, segments):
 
     node_coordinates = np.array(node_coordinates)
     segment_indices = np.array(segment_indices)
+    if len(node_coordinates) == 0:
+        print('what')
 
     frontier_cells = np.argwhere(frontier_grid == 1)
 
@@ -408,13 +444,11 @@ def assign_frontier_targets_to_segments(frontier_grid, segments):
 def heuristic(a, b):
     return np.linalg.norm(np.array(a) - np.array(b))
 
-def calculate_costs(graph, robots, segments, frontier_targets, nodes):
+
+def assign_paths(graph, robots, segments, frontier_targets, nodes):
     """
     Calculates costs, discounting when the agent is already present in the segment, and assigns segments to robots
     using the Hungarian method.
-
-    Returns a dictionary keyed to each robot, with the value of each entry being the index corresponding to the segment
-    list
     """
     costs = {}
     for robot in robots:
@@ -425,46 +459,54 @@ def calculate_costs(graph, robots, segments, frontier_targets, nodes):
 
         robot_costs = {}
         for i, segment in enumerate(segments):
-            if len(frontier_targets) == 0:
+            if len(frontier_targets[i]) == 0:
                 continue
-            # Find closest frontier cell within the segment
-            closest_frontier_cell = tuple(min(frontier_targets[i], key=lambda cell: np.linalg.norm(np.array(cell) - robot.position)))
 
-            # Add the frontier cell to the graph and connect it to the nearest node in the segment
+            closest_frontier_cell = tuple(
+                min(frontier_targets[i], key=lambda cell: np.linalg.norm(np.array(cell) - robot.position)))
+
             if closest_frontier_cell not in graph:
                 graph.add_node(closest_frontier_cell)
-                nearest_node_in_segment = tuple(min(segment, key=lambda node: np.linalg.norm(np.array(node) - np.array(closest_frontier_cell))))
+                nearest_node_in_segment = tuple(
+                    min(segment, key=lambda node: np.linalg.norm(np.array(node) - np.array(closest_frontier_cell))))
                 graph.add_edge(closest_frontier_cell, nearest_node_in_segment)
 
-            # Calculate path cost to the nearest frontier cell
             try:
                 path = nx.astar_path(graph, position, closest_frontier_cell, heuristic=heuristic)
                 path_cost = len(path)
             except nx.NetworkXNoPath:
-                path_cost = 99999  # Assign a high cost in case of no path
+                path_cost = 99999
 
             robot_costs[i] = path_cost
             graph.remove_nodes_from([closest_frontier_cell])
 
         costs[robot] = robot_costs
 
-    num_robots = len(robots)
-    num_segments = len(segments)
-    max_dim = max(num_robots, num_segments)
-    cost_matrix = np.full((max_dim, max_dim), 99999)
-
+    cost_matrix = np.full((len(robots), len(segments)), 99999)
     for i, robot in enumerate(robots):
-        for j in range(num_segments):
+        for j in range(len(segments)):
             cost_matrix[i, j] = costs[robot].get(j, 99999)
 
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
-    assignments = {robots[i]: [col_ind[i]] for i in range(num_robots) if col_ind[i] < num_segments}
-    return assignments
+    assignment = {robot: None for robot in robots}
+    for i, j in zip(row_ind, col_ind):
+        assignment[robots[i]] = segments[j] if j < len(segments) else None
+
+    # for i, robot in enumerate(robots):
+    #     if assignment[robot] is None:
+    #         # Find the next best segment for the robot
+    #         next_best_segment = np.argmin(cost_matrix[i, :])
+    #         assignment[robot] = segments[next_best_segment] if next_best_segment < len(segments) else None
+
+    for robot in robots:
+        robot.path = np.array(assignment[robot]) if assignment[robot] is not None else None
+        if robot.path is not None:
+            robot.path_history.append(np.copy(robot.path))
 
 
 def generate_voronoi_graph(occupancy_grid):
-    distance_map = distance_transform_edt(occupancy_grid >= 0)
-    skeleton = skeletonize(distance_map > 0)
+    distance_map = distance_transform_edt(occupancy_grid > 0)
+    skeleton = skeletonize(distance_map > 5)
     graph = nx.Graph()
     uf = UnionFind()
 
@@ -486,16 +528,16 @@ def generate_voronoi_graph(occupancy_grid):
     # Add nodes and edges to the graph
     graph.add_nodes_from(nodes)
     for edge in edges:
-        if uf.union(*edge) and not line_close_to_wall(edge, occupancy_grid):
+        if uf.union(*edge):  # and not line_close_to_wall(edge, occupancy_grid):
             graph.add_edge(*edge)
 
     isolated_nodes = [node for node, degree in graph.degree() if degree == 0]
     graph.remove_nodes_from(isolated_nodes)
     nodes = nodes - set(isolated_nodes)
 
-    critical_nodes, segments = find_critical_nodes(graph, occupancy_grid)
+    critical_nodes, segments, leaf_nodes = find_critical_nodes(graph, occupancy_grid)
 
-    return graph, critical_nodes, segments, nodes
+    return graph, critical_nodes, segments, nodes, leaf_nodes
 
 
 def plot_segment_with_frontier(segment_index, segments, frontier_targets):
@@ -513,31 +555,32 @@ def plot_segment_with_frontier(segment_index, segments, frontier_targets):
     plt.plot(x, y, marker='o', markersize=5, linestyle='-', color='blue', label='Segment')
 
     # Plotting the frontier space
-    fx, fy = zip(*frontier_space)
-    plt.scatter(fx, fy, marker='x', color='red', label='Frontier Space')
+    if len(frontier_space) > 0:
+        fx, fy = zip(*frontier_space)
+        plt.scatter(fx, fy, marker='x', color='red', label='Frontier Space')
     plt.legend()
     plt.savefig('segment_and_frontier.png')
 
 
 def draw_frontier_grid(frontier_grid, occupancy_grid, filename='frontier_grid.png'):
-    occupancy_grid = np.flip(occupancy_grid, axis=1)
-    frontier_grid = np.flip(frontier_grid, axis=1)
+    occupancy_grid = np.transpose(occupancy_grid)
+    frontier_grid = np.transpose(frontier_grid)
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, occupancy_grid.shape[0] * 10, occupancy_grid.shape[1] * 10)
     ctx = cairo.Context(surface)
 
     # Draw the grid
     for x in range(occupancy_grid.shape[0]):
         for y in range(occupancy_grid.shape[1]):
-            if occupancy_grid[x][y] == 0:
+            if occupancy_grid[y][x] == 0:
                 ctx.rectangle(x * 10, y * 10, 10, 10)
                 ctx.set_source_rgb(0, 0, 0)
-            elif occupancy_grid[x][y] == 1:
+            elif occupancy_grid[y][x] == 1:
                 ctx.rectangle(x * 10, y * 10, 10, 10)
                 ctx.set_source_rgb(1, 1, 1)
             else:
                 ctx.rectangle(x * 10, y * 10, 10, 10)
                 ctx.set_source_rgb(0.5, 0.5, 0.5)
-            if frontier_grid[x, y] == 1:
+            if frontier_grid[y, x] == 1:
                 ctx.rectangle(x * 10, y * 10, 10, 10)
                 ctx.set_source_rgb(1, 0, 0)
 

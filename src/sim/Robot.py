@@ -5,7 +5,8 @@ from src.sim.Functions import rotate_vector, line_intersection, is_between, plot
 
 
 class Robot:
-    def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, perception_range=50, max_vel=5, avoid_range=7):
+    def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, perception_range=50, max_vel=5, avoid_range=7,
+                 arrival_range=5):
         self.position = np.array(position)
         self.velocity = np.random.randint(-360.0, 360.0, size=(2,))
         velocity_magnitude = np.linalg.norm(self.velocity)
@@ -23,6 +24,9 @@ class Robot:
         self.orientation_history = [np.copy(self.orientation)]
         self.velocity_history = [np.copy(self.velocity)]
         self.is_avoiding = False
+        self.path = None
+        self.path_history = []
+        self.arrival_range = arrival_range
 
     def update_velocity(self):
         new_velocity = self.velocity + self.acceleration
@@ -31,7 +35,7 @@ class Robot:
         if velocity_magnitude > self.max_vel:
             new_velocity = (new_velocity / velocity_magnitude) * self.max_vel
 
-        vel_turn_rate = 0.1
+        vel_turn_rate = 0.5
         if self.is_avoiding:
             vel_turn_rate = 1
         self.velocity = self.smooth_transition(self.velocity, new_velocity, vel_turn_rate)
@@ -40,7 +44,7 @@ class Robot:
         if np.any(self.velocity != 0):
             if np.any(self.velocity != 0):
                 new_orientation = self.velocity / np.linalg.norm(self.velocity)
-                self.orientation = self.smooth_turn(self.orientation, new_orientation, 0.05)
+                self.orientation = self.smooth_turn(self.orientation, new_orientation, 0.5)
         self.perception_cone = self.get_perception_cone()
 
     def smooth_turn(self, current_orientation, new_orientation, turning_rate):
@@ -56,6 +60,9 @@ class Robot:
         self.position_history.append(np.copy(self.position))
         self.orientation_history.append(np.copy(self.orientation))
         self.velocity_history.append(np.copy(self.velocity))
+        if self.path is not None and len(self.path) > 0 and\
+                np.linalg.norm(self.position - self.path[0]) > self.arrival_range:
+            self.path = self.path[1:]
 
     # Generate vectors in a cone around the orientation vector.
     def get_perception_cone(self):
