@@ -206,7 +206,9 @@ def assign_paths(graph, robots, segments, frontier_targets, nodes, occupancy_gri
     # nodes_array = np.concatenate([np.array(list(nodes)), all_targets_array])
     nodes_array = np.array(list(nodes))
     for robot in robots:
-        position = tuple(find_unobstructed_node(robot.position, nodes_array, occupancy_grid))
+        position = find_unobstructed_node(robot.position, nodes_array, occupancy_grid)
+        if position is not None:
+            position = tuple(position)
         # if position is None:
         #     if len(robot.path_history) > 0 and len(robot.path_history[-1]) > 1:
         #         # Get last non-frontier node from path formed by previous graph
