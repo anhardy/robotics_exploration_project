@@ -2,11 +2,12 @@ import numpy as np
 
 # from src.environment.RandomEnv import SimEnv
 from src.sim.Functions import rotate_vector, line_intersection, is_between, plot_detection, angle_between
-
+from numba import jit
 
 class Robot:
     def __init__(self, position, angle_range=np.pi / 3, num_vectors=5, perception_range=50, max_vel=5, avoid_range=7,
                  arrival_range=5):
+        self.last_node = None
         self.position = np.array(position)
         self.velocity = np.random.randint(-360.0, 360.0, size=(2,))
         velocity_magnitude = np.linalg.norm(self.velocity)
@@ -23,8 +24,10 @@ class Robot:
         self.position_history = [np.copy(self.position)]
         self.orientation_history = [np.copy(self.orientation)]
         self.velocity_history = [np.copy(self.velocity)]
+        self.good_position_history = []
         self.is_avoiding = False
         self.path = None
+        self.path_len = 1
         self.path_history = []
         self.arrival_range = arrival_range
 
@@ -35,7 +38,7 @@ class Robot:
         if velocity_magnitude > self.max_vel:
             new_velocity = (new_velocity / velocity_magnitude) * self.max_vel
 
-        vel_turn_rate = 0.5
+        vel_turn_rate = 0.1
         if self.is_avoiding:
             vel_turn_rate = 1
         self.velocity = self.smooth_transition(self.velocity, new_velocity, vel_turn_rate)
@@ -56,12 +59,17 @@ class Robot:
         return current_value * (1 - turning_rate) + target_value * turning_rate
 
     def update_position(self):
+        if self.path is not None and len(self.path) > 1:
+            arrival_range = self.arrival_range
+        else:
+            arrival_range = self.perception_range / 2
         self.position += self.velocity
         self.position_history.append(np.copy(self.position))
         self.orientation_history.append(np.copy(self.orientation))
         self.velocity_history.append(np.copy(self.velocity))
         if self.path is not None and len(self.path) > 0 and\
-                np.linalg.norm(self.position - self.path[0]) > self.arrival_range:
+                np.linalg.norm(self.position - self.path[0]) < arrival_range:
+            self.last_node = self.path[-1]
             self.path = self.path[1:]
 
     # Generate vectors in a cone around the orientation vector.

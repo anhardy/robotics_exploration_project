@@ -72,11 +72,13 @@ class SimEnv:
         center_x, center_y = start_room.center()
         starting_points = []
 
+        # for _ in range(n_robot):
+        #     x = random.randint(center_x - start_room.width // 2 + r_radius, center_x + start_room.width // 2 - r_radius)
+        #     y = random.randint(center_y - start_room.height // 2 + r_radius, center_y + start_room.height // 2 -
+        #                        r_radius)
+        #     starting_points.append((x, y))
         for _ in range(n_robot):
-            x = random.randint(center_x - start_room.width // 2 + r_radius, center_x + start_room.width // 2 - r_radius)
-            y = random.randint(center_y - start_room.height // 2 + r_radius, center_y + start_room.height // 2 -
-                               r_radius)
-            starting_points.append((x, y))
+            starting_points.append((center_x, center_y))
 
         return starting_points
 

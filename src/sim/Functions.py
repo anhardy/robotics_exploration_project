@@ -10,6 +10,8 @@ from scipy.optimize import linear_sum_assignment
 from skimage.morphology import skeletonize
 import networkx as nx
 
+from src.environment.PathGraph import update_graph
+
 
 # Rotate a 2D vector by a given angle.
 def rotate_vector(vector, angles):
@@ -110,7 +112,6 @@ def plot_robot_paths(robots, polygons):
         plt.plot(x_positions, y_positions, marker='o', markersize=1)
 
     plt.title('Robot Positions')
-    plt.legend([f'Robot {i + 1}' for i in range(len(robots))])
     plt.savefig('sim_output.png')
 
 
@@ -159,9 +160,8 @@ def animate_paths(robots, polygons):
     anim = FuncAnimation(fig, update, frames=max(len(r.position_history) for r in robots),
                          init_func=init, blit=True)
 
-    plt.legend()
     # plt.show()
-    anim.save('paths.gif', fps=60)
+    anim.save('paths.gif', fps=30)
 
     return anim
 
@@ -193,7 +193,8 @@ def animate_sim(robots, polygons, occupancy_grid):
     bounds = [-1.5, -0.5, 0.5, 1.5]
     norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 
-    occupancy_img = ax.imshow(occupancy_grid[0], cmap=cmap, norm=norm, interpolation='nearest', alpha=0.5)
+    occupancy_img = ax.imshow(np.transpose(occupancy_grid[0]), cmap=cmap, norm=norm, interpolation='nearest', alpha=0.5,
+                              origin='lower')
 
     # Plot polygons
     for polygon in polygons:
@@ -237,9 +238,8 @@ def animate_sim(robots, polygons, occupancy_grid):
     anim = FuncAnimation(fig, update, frames=max(len(r.position_history) for r in robots),
                          init_func=init, blit=True)
 
-    plt.legend()
     # plt.show()
-    anim.save('sim_run.gif', fps=60)
+    anim.save('sim_run.gif', fps=30)
 
     return anim
 
@@ -294,56 +294,6 @@ def update_frontier_grid(occupancy_grid):
     return frontier_grid
 
 
-# Try to ignore intersecting edges or edges that risk collision
-def line_close_to_wall(edge, occupancy_grid):
-    (x0, y0), (x1, y1) = edge
-    dx = abs(x1 - x0)
-    dy = -abs(y1 - y0)
-    sx = 1 if x0 < x1 else -1
-    sy = 1 if y0 < y1 else -1
-    err = dx + dy
-
-    while True:
-        if occupancy_grid[x0, y0] == 0:  # Wall cell found
-            return True
-        if x0 == x1 and y0 == y1:
-            break
-        e2 = 2 * err
-        if e2 >= dy:
-            err += dy
-            x0 += sx
-        if e2 <= dx:
-            err += dx
-            y0 += sy
-
-    return False
-
-
-# def is_accessible_to_frontier(node, occupancy_grid, max_distance=25):
-#     # Perform a BFS to find if there is accessible frontier space within distance
-#     visited = set()
-#     queue = deque([(node, 0)])  # (node, distance)
-#
-#     while queue:
-#         (r, c), distance = queue.popleft()
-#         if distance > max_distance:
-#             break  # Limit the search to distance
-#
-#         # Check for frontier space
-#         if occupancy_grid[r][c] == -1:
-#             return True
-#
-#         # Add neighbors to the queue
-#         for nr, nc in [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1),
-#                        (r - 1, c - 1), (r - 1, c + 1), (r + 1, c - 1), (r + 1, c + 1)]:
-#             if (len(occupancy_grid) > nr >= 0 != occupancy_grid[nr][nc] and 0 <= nc < len(occupancy_grid[0])
-#                     and (nr, nc) not in visited):
-#                 visited.add((nr, nc))
-#                 queue.append(((nr, nc), distance + 1))
-#
-#     return False
-
-
 def find_critical_nodes(graph, occupancy_grid):
     critical_nodes = set([])
     segments = []
@@ -378,10 +328,11 @@ def find_critical_nodes(graph, occupancy_grid):
             # Check if current node is a critical node
             if graph.degree[current] == 2 and any(
                     graph.degree[neighbor] == 3 for neighbor in graph.neighbors(current)):
-                if current not in critical_nodes:
-                    segments.append(path)
+                segments.append(path)
                 critical_nodes.add(current)
                 break
+    if len(segments) == 0:
+        segments = graph
 
     return critical_nodes, segments, leaf_nodes
 
@@ -445,20 +396,59 @@ def heuristic(a, b):
     return np.linalg.norm(np.array(a) - np.array(b))
 
 
-def assign_paths(graph, robots, segments, frontier_targets, nodes):
+def find_unobstructed_node(robot_pos, nodes, occupancy_grid):
+    robot_x, robot_y = robot_pos
+    unobstructed_nodes = []
+    distances = []
+
+    for node in nodes:
+        node_x, node_y = node
+
+        x = np.linspace(robot_x, node_x, num=100)
+        y = np.linspace(robot_y, node_y, num=100)
+        sampled_grid_values = occupancy_grid[np.round(x).astype(int), np.round(y).astype(int)]
+
+        if np.any(sampled_grid_values) == 0:
+            distance = np.linalg.norm(robot_pos - node)
+            unobstructed_nodes.append(node)
+            distances.append(distance)
+
+    # Find the closest unobstructed node
+    if unobstructed_nodes:
+        closest_node = unobstructed_nodes[np.argmin(distances)]
+        return closest_node
+
+    return None
+
+
+def assign_paths(graph, robots, segments, frontier_targets, nodes, occupancy_grid):
     """
-    Calculates costs, discounting when the agent is already present in the segment, and assigns segments to robots
+    Calculates paths to segments and assigns these paths to robots
     using the Hungarian method.
     """
     costs = {}
+    paths_dict = {}
+    # flattened_targets = [target for segment in frontier_targets for target in segment]
+    #
+    # all_targets_array = np.array(flattened_targets)
+    # nodes_array = np.concatenate([np.array(list(nodes)), all_targets_array])
+    nodes_array = np.array(list(nodes))
     for robot in robots:
-        nodes_array = np.array(list(nodes))
+        # position = find_unobstructed_node(robot.position, nodes_array, occupancy_grid)
+        # if position is None:
+        #     if len(robot.path_history) > 0 and len(robot.path_history[-1]) > 1:
+        #         # Get last non-frontier node from path formed by previous graph
+        #         last_good_node_before_update = robot.path_history[-1][-2]
+        #         position = find_unobstructed_node(last_good_node_before_update, nodes_array, occupancy_grid)
+        # if position is None:
         distances = np.linalg.norm(nodes_array - robot.position, axis=1)
-        closest_node_index = np.argmin(distances)
-        position = tuple(nodes_array[closest_node_index])
-
+        position = tuple(nodes_array[np.argmin(distances)])
         robot_costs = {}
+        robot_paths = {}
         for i, segment in enumerate(segments):
+            path_cost = 99999
+            path = []
+
             if len(frontier_targets[i]) == 0:
                 continue
 
@@ -474,41 +464,63 @@ def assign_paths(graph, robots, segments, frontier_targets, nodes):
             try:
                 path = nx.astar_path(graph, position, closest_frontier_cell, heuristic=heuristic)
                 path_cost = len(path)
+                if position in segment:
+                    path_cost *= 0.01
             except nx.NetworkXNoPath:
                 path_cost = 99999
+            except nx.NodeNotFound:
+                if not graph.has_node(position):
+                    print(f"Source node {position} is not in the graph.")
+                if not graph.has_node(closest_frontier_cell):
+                    print(f"Target node {closest_frontier_cell} is not in the graph.")
 
             robot_costs[i] = path_cost
+            robot_paths[i] = path
             graph.remove_nodes_from([closest_frontier_cell])
 
         costs[robot] = robot_costs
+        paths_dict[robot] = robot_paths
 
     cost_matrix = np.full((len(robots), len(segments)), 99999)
     for i, robot in enumerate(robots):
         for j in range(len(segments)):
             cost_matrix[i, j] = costs[robot].get(j, 99999)
 
+    # Initial assignment
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
     assignment = {robot: None for robot in robots}
     for i, j in zip(row_ind, col_ind):
-        assignment[robots[i]] = segments[j] if j < len(segments) else None
+        assignment[robots[i]] = paths_dict[robots[i]][j] if j < len(segments) else None
 
-    # for i, robot in enumerate(robots):
-    #     if assignment[robot] is None:
-    #         # Find the next best segment for the robot
-    #         next_best_segment = np.argmin(cost_matrix[i, :])
-    #         assignment[robot] = segments[next_best_segment] if next_best_segment < len(segments) else None
+    # Identify unassigned robots
+    unassigned_robots = [robot for robot, path in assignment.items() if path is None]
+
+    # Iterative reassignment
+    while unassigned_robots:
+        # Recompute cost matrix for unassigned robots, excluding assigned segments
+        new_cost_matrix = cost_matrix[[robots.index(robot) for robot in unassigned_robots], :]
+        new_cost_matrix[:, col_ind] = 99999  # Set costs of assigned segments to a high value
+
+        # Find new assignments for unassigned robots
+        row_ind, col_ind_new = linear_sum_assignment(new_cost_matrix)
+        for i, j in zip(row_ind, col_ind_new):
+            robot = unassigned_robots[i]
+            assignment[robot] = paths_dict[robot][j] if j < len(segments) else None
+
+        # Update unassigned robots
+        unassigned_robots = [robot for robot, path in assignment.items() if path is None]
 
     for robot in robots:
         robot.path = np.array(assignment[robot]) if assignment[robot] is not None else None
         if robot.path is not None:
             robot.path_history.append(np.copy(robot.path))
+            robot.path_len = len(robot.path)
 
 
 def generate_voronoi_graph(occupancy_grid):
-    distance_map = distance_transform_edt(occupancy_grid > 0)
-    skeleton = skeletonize(distance_map > 5)
+    skeleton = skeletonize(occupancy_grid > 0)
     graph = nx.Graph()
-    uf = UnionFind()
+    # uf = UnionFind()
 
     rows, cols = skeleton.shape
     nodes = set()
@@ -528,12 +540,8 @@ def generate_voronoi_graph(occupancy_grid):
     # Add nodes and edges to the graph
     graph.add_nodes_from(nodes)
     for edge in edges:
-        if uf.union(*edge):  # and not line_close_to_wall(edge, occupancy_grid):
-            graph.add_edge(*edge)
-
-    isolated_nodes = [node for node, degree in graph.degree() if degree == 0]
-    graph.remove_nodes_from(isolated_nodes)
-    nodes = nodes - set(isolated_nodes)
+        # if uf.union(*edge):  # and not line_close_to_wall(edge, occupancy_grid):
+        graph.add_edge(*edge)
 
     critical_nodes, segments, leaf_nodes = find_critical_nodes(graph, occupancy_grid)
 
@@ -568,21 +576,27 @@ def draw_frontier_grid(frontier_grid, occupancy_grid, filename='frontier_grid.pn
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, occupancy_grid.shape[0] * 10, occupancy_grid.shape[1] * 10)
     ctx = cairo.Context(surface)
 
+    # Calculate the height of the surface to flip the y-axis
+    surface_height = occupancy_grid.shape[1] * 10
+
     # Draw the grid
     for x in range(occupancy_grid.shape[0]):
         for y in range(occupancy_grid.shape[1]):
+            # Flip the y-axis
+            flipped_y = surface_height - (y + 1) * 10
+
+            # Draw the occupancy grid
+            ctx.rectangle(x * 10, flipped_y, 10, 10)
             if occupancy_grid[y][x] == 0:
-                ctx.rectangle(x * 10, y * 10, 10, 10)
-                ctx.set_source_rgb(0, 0, 0)
+                ctx.set_source_rgb(0, 0, 0)  # Black for unoccupied
             elif occupancy_grid[y][x] == 1:
-                ctx.rectangle(x * 10, y * 10, 10, 10)
-                ctx.set_source_rgb(1, 1, 1)
+                ctx.set_source_rgb(1, 1, 1)  # White for occupied
             else:
-                ctx.rectangle(x * 10, y * 10, 10, 10)
-                ctx.set_source_rgb(0.5, 0.5, 0.5)
+                ctx.set_source_rgb(0.5, 0.5, 0.5)  # Grey for unknown
+
+            # Draw the frontier grid
             if frontier_grid[y, x] == 1:
-                ctx.rectangle(x * 10, y * 10, 10, 10)
-                ctx.set_source_rgb(1, 0, 0)
+                ctx.set_source_rgb(1, 0, 0)  # Red for frontier
 
             ctx.fill()
 

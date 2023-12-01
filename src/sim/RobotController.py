@@ -16,8 +16,8 @@ class RobotController:
                 avoid_vector = self.avoid_behavior(robot, intersections) * self.avoid_weight
             else:
                 avoid_vector = np.array([0, 0])
-            if np.any(avoid_vector) > 0:
-                is_avoiding = True
+            # if np.any(avoid_vector) > 0:
+            #     is_avoiding = True
 
             acceleration = steer_vector + avoid_vector
 

@@ -3,9 +3,10 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.ndimage import distance_transform_edt
 
+from src.environment.PathGraph import create_graph_from_grid
 from src.environment.RandomEnv import SimEnv
-from src.sim.behaviors.steer_behavior import steer_behavior
-from src.sim.behaviors.avoidance_behavior import avoidance_behavior
+from src.sim.behaviors.SteerBehavior import steer_behavior
+from src.sim.behaviors.AvoidanceBehavior import avoidance_behavior
 from src.sim.Functions import plot_robot_paths, animate_paths, animate_sim, update_grid, generate_voronoi_graph, \
     draw_occupancy, draw_frontier_grid, assign_frontier_targets_to_segments, assign_paths, plot_segment_with_frontier
 from src.sim.Robot import Robot
@@ -13,6 +14,7 @@ from src.sim.RobotController import RobotController
 from scipy.spatial import Voronoi, voronoi_plot_2d
 import cProfile
 import pstats
+from tqdm import tqdm
 from io import StringIO
 
 robots = []
@@ -21,11 +23,11 @@ env = SimEnv(width=250, height=250, min_room_size=20, max_room_size=50, min_room
              n_robots=5, r_radius=2, rand_connections=1)
 env.scale_grid(750, 750)
 
-controller = RobotController(1, 2, steer_behavior=steer_behavior, avoid_behavior=avoidance_behavior)
+controller = RobotController(1, 5, steer_behavior=steer_behavior, avoid_behavior=avoidance_behavior)
 
 for robot in env.starting_points:
-    robots.append(Robot(robot, max_vel=2.5, num_vectors=40, angle_range=np.pi / 3, perception_range=30, avoid_range=2,
-                        arrival_range=20))
+    robots.append(Robot(robot, max_vel=2.5, num_vectors=30, angle_range=np.pi / 3, perception_range=30, avoid_range=10,
+                        arrival_range=4))
 
 grid_height = 750
 grid_width = 750
@@ -40,9 +42,13 @@ pr.enable()
 env_size = np.array((env.width, env.height), dtype=float)
 grid_size = np.array((grid_width, grid_height))
 grid_history = [np.copy(occupancy_grid)]
-for i in range(250):
+# Minimum time until next update, regardless of if a robot completes its current path
+min_update_interval = 10
+time_since_last_update = 0
+for i in tqdm(range(3500), desc="Running Simulation"):
     all_intersections = []
     all_open_spaces = []
+    update_flag = False
     for robot in robots:
         nearby_lines = env.quadtree.query_range(robot.position, robot.perception_range)
         intersections, open_space = robot.detect(nearby_lines)
@@ -52,13 +58,16 @@ for i in range(250):
             controller.calculate_acceleration(robot, robot.path, intersections))
         robot.update_velocity()
         robot.update_position()
+        if robot.path is None or len(robot.path) == 0:
+            update_flag = True
 
-    occupancy_grid, frontier_grid = update_grid(occupancy_grid, all_intersections, all_open_spaces, env_size,
+    occupancy_grid, frontier_grid = update_grid(occupancy_grid, all_intersections, all_open_spaces,
+                                                env_size,
                                                 grid_size)
     grid_history.append(np.copy(occupancy_grid))
-
-    # TODO possibly better way of determining when to do an update of the graph + reassignment of segments/frontiers
-    if i % 5 == 0:
+    # if i % 25 == 0:
+    if update_flag and time_since_last_update >= min_update_interval:
+        time_since_last_update = 0
         graph, critical_points, segments, nodes, leaf_nodes = generate_voronoi_graph(occupancy_grid)
         frontier_targets = assign_frontier_targets_to_segments(frontier_grid, segments)
 
@@ -69,9 +78,9 @@ for i in range(250):
                 good_segments.append(segment)
                 good_targets.append(frontier_targets[j])
 
-        # TODO only do perception on robots currently assigned to a task. Need to initialize robots differently.
-        #   ALL robots should still be considered when updating the graph in case assignments change
-        assign_paths(graph, robots, good_segments, good_targets, nodes)
+        assign_paths(graph, robots, good_segments, good_targets, nodes, occupancy_grid)
+    else:
+        time_since_last_update += 1
         # for robot in robots:
         #     closest_node =
     # plt.clf()
@@ -98,7 +107,6 @@ ps.print_stats()
 
 print(s.getvalue())
 
-
 draw_occupancy(occupancy_grid)
 draw_frontier_grid(frontier_grid, occupancy_grid)
 plot_segment_with_frontier(0, segments, frontier_targets)
@@ -115,7 +123,6 @@ nx.draw_networkx_edges(graph, pos={n: n for n in graph.nodes}, edge_color='red')
 for point in critical_points:
     plt.scatter(*point, color='green', s=10)
 
-plt.grid(False)  # Turn off the grid if not needed
 plt.savefig('skeleton.png')
 plt.show()
 
