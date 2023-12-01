@@ -57,10 +57,6 @@ class SimEnv:
         self.starting_points = self.pick_starting_points(n_robots, r_radius)
         self.polygon, self.polygon_arr = self.convert_to_poly()
 
-        # self.quadtree = QuadTree(width, height)
-        #
-        # self.populate_quadtree()
-
     def populate_quadtree(self):
         line_id = 0
         for line in self.polygon_arr:

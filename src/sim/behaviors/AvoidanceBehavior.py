@@ -2,7 +2,6 @@ import numpy as np
 
 
 def avoidance_behavior(robot, intersections):
-    # Convert intersections to a NumPy array for vectorized operations
     intersections = np.array(intersections)
 
     # Calculate vectors from intersections to robot

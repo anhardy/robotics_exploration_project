@@ -77,7 +77,7 @@ class QuadTree:
         self._insert_line(self.root, line, line_id)
 
     def _insert_line(self, node, line, line_id):
-        # If node at max depth or below max items, add line ID here
+        # If node at max depth or below max items
         if node.depth == node.max_depth or len(node.lines) < node.max_items:
             node.lines.append(line_id)
             return

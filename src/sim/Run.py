@@ -1,21 +1,21 @@
 import networkx as nx
 import numpy as np
 from matplotlib import pyplot as plt
-from scipy.ndimage import distance_transform_edt
 
-from src.environment.PathGraph import create_graph_from_grid
 from src.environment.RandomEnv import SimEnv
 from src.sim.behaviors.SteerBehavior import steer_behavior
 from src.sim.behaviors.AvoidanceBehavior import avoidance_behavior
-from src.sim.Functions import plot_robot_paths, animate_paths, animate_sim, update_grid, generate_voronoi_graph, \
-    draw_occupancy, draw_frontier_grid, assign_frontier_targets_to_segments, assign_paths, plot_segment_with_frontier
-from src.sim.Robot import Robot
-from src.sim.RobotController import RobotController
-from scipy.spatial import Voronoi, voronoi_plot_2d
+from src.sim.Functions import (plot_robot_paths, animate_sim, draw_occupancy, draw_frontier_grid,
+                               plot_segment_with_frontier)
+from src.sim.robot.Robot import Robot
+from src.sim.robot.RobotController import RobotController
 import cProfile
 import pstats
 from tqdm import tqdm
 from io import StringIO
+
+from src.sim.grid_and_path.Path import update_grid, generate_voronoi_graph, assign_frontier_targets_to_segments, \
+    assign_paths
 
 robots = []
 
@@ -43,9 +43,9 @@ env_size = np.array((env.width, env.height), dtype=float)
 grid_size = np.array((grid_width, grid_height))
 grid_history = [np.copy(occupancy_grid)]
 # Minimum time until next update, regardless of if a robot completes its current path
-min_update_interval = 10
+min_update_interval = 15
 time_since_last_update = 0
-for i in tqdm(range(3500), desc="Running Simulation"):
+for i in tqdm(range(3000), desc="Running Simulation"):
     all_intersections = []
     all_open_spaces = []
     update_flag = False
