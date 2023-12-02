@@ -2,6 +2,7 @@ import networkx as nx
 import numpy as np
 from matplotlib import pyplot as plt
 
+from src.environment.PathGraph import create_graph_from_grid
 from src.environment.RandomEnv import SimEnv
 from src.sim.behaviors.SteerBehavior import steer_behavior
 from src.sim.behaviors.AvoidanceBehavior import avoidance_behavior
@@ -26,8 +27,8 @@ env.scale_grid(750, 750)
 controller = RobotController(1, 5, steer_behavior=steer_behavior, avoid_behavior=avoidance_behavior)
 
 for robot in env.starting_points:
-    robots.append(Robot(robot, max_vel=2.5, num_vectors=30, angle_range=np.pi / 3, perception_range=30, avoid_range=10,
-                        arrival_range=4))
+    robots.append(Robot(robot, max_vel=2, num_vectors=30, angle_range=np.pi / 3, perception_range=30, avoid_range=10,
+                        arrival_range=10))
 
 grid_height = 750
 grid_width = 750
@@ -45,6 +46,7 @@ grid_history = [np.copy(occupancy_grid)]
 # Minimum time until next update, regardless of if a robot completes its current path
 min_update_interval = 15
 time_since_last_update = 0
+path_graph = create_graph_from_grid(occupancy_grid)
 for i in tqdm(range(3000), desc="Running Simulation"):
     all_intersections = []
     all_open_spaces = []
@@ -61,9 +63,9 @@ for i in tqdm(range(3000), desc="Running Simulation"):
         if robot.path is None or len(robot.path) == 0:
             update_flag = True
 
-    occupancy_grid, frontier_grid = update_grid(occupancy_grid, all_intersections, all_open_spaces,
+    occupancy_grid, frontier_grid, path_graph = update_grid(occupancy_grid, all_intersections, all_open_spaces,
                                                 env_size,
-                                                grid_size)
+                                                grid_size, path_graph)
     grid_history.append(np.copy(occupancy_grid))
     # if i % 25 == 0:
     if update_flag and time_since_last_update >= min_update_interval:
@@ -78,7 +80,7 @@ for i in tqdm(range(3000), desc="Running Simulation"):
                 good_segments.append(segment)
                 good_targets.append(frontier_targets[j])
 
-        assign_paths(graph, robots, good_segments, good_targets, nodes, occupancy_grid)
+        assign_paths(graph, robots, good_segments, good_targets, nodes, path_graph, occupancy_grid)
     else:
         time_since_last_update += 1
         # for robot in robots:

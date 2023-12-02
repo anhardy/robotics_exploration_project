@@ -3,6 +3,8 @@ from scipy.optimize import linear_sum_assignment
 from skimage.morphology import skeletonize
 import networkx as nx
 
+from src.environment.PathGraph import update_graph
+
 
 # Just converts continuous coordinates to occupancy grid coordinates
 def continuous_to_grid(points, env_size, grid_size):
@@ -14,7 +16,7 @@ def continuous_to_grid(points, env_size, grid_size):
     return grid_points
 
 
-def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size, pad_range=3):
+def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size, path_graph, pad_range=3):
     if len(open_spaces) > 0:
         grid_open_spaces = continuous_to_grid(open_spaces, env_size, grid_size)
 
@@ -40,10 +42,14 @@ def update_grid(occupancy_grid, intersections, open_spaces, env_size, grid_size,
 
         # Update the occupancy grid with the padded intersections
         occupancy_grid[pad_grid] = 0
+        changed_cells = np.where(pad_grid)
+
+        changed_cells = list(zip(changed_cells[0], changed_cells[1]))
+        path_graph = update_graph(path_graph, occupancy_grid, changed_cells)
 
     frontier_grid = update_frontier_grid(occupancy_grid)
 
-    return occupancy_grid, frontier_grid
+    return occupancy_grid, frontier_grid, path_graph
 
 
 def update_frontier_grid(occupancy_grid):
@@ -193,64 +199,63 @@ def find_unobstructed_node(robot_pos, nodes, occupancy_grid):
     return None
 
 
-def assign_paths(graph, robots, segments, frontier_targets, nodes, occupancy_grid):
+def find_nearest_node(graph, position):
+    nodes = np.array(graph.nodes())
+    distances = np.linalg.norm(nodes - position, axis=1)
+    nearest_node = tuple(nodes[np.argmin(distances)])
+    return nearest_node
+
+
+def assign_paths(graph, robots, segments, frontier_targets, nodes, path_graph, occupancy_grid):
     """
     Calculates paths to segments and assigns these paths to robots
     using the Hungarian method.
     """
     costs = {}
     paths_dict = {}
-    # flattened_targets = [target for segment in frontier_targets for target in segment]
-    #
-    # all_targets_array = np.array(flattened_targets)
-    # nodes_array = np.concatenate([np.array(list(nodes)), all_targets_array])
     nodes_array = np.array(list(nodes))
+
     for robot in robots:
-        position = find_unobstructed_node(robot.position, nodes_array, occupancy_grid)
-        if position is not None:
-            position = tuple(position)
-        # if position is None:
-        #     if len(robot.path_history) > 0 and len(robot.path_history[-1]) > 1:
-        #         # Get last non-frontier node from path formed by previous graph
-        #         last_good_node_before_update = robot.path_history[-1][-2]
-        #         position = find_unobstructed_node(last_good_node_before_update, nodes_array, occupancy_grid)
-        if position is None:
-            distances = np.linalg.norm(nodes_array - robot.position, axis=1)
-            position = tuple(nodes_array[np.argmin(distances)])
         robot_costs = {}
         robot_paths = {}
+
+        distances_to_voronoi = np.linalg.norm(nodes_array - robot.position, axis=1)
+        nearest_voronoi_node = tuple(nodes_array[np.argmin(distances_to_voronoi)])
+        position = tuple(np.round(robot.position).astype(int))
+        try:
+            # First path segment: from robot to nearest node on Voronoi graph
+            path_to_voronoi = nx.astar_path(path_graph, position, nearest_voronoi_node,
+                                            heuristic=heuristic)
+        except nx.NetworkXNoPath:
+            # If robot's position is not in the global graph, find the nearest node
+            nearest_node_in_global_graph = find_nearest_node(path_graph, position)
+            path_to_voronoi = [position, nearest_node_in_global_graph]
+
         for i, segment in enumerate(segments):
-            path_cost = 99999
-            path = []
 
             if len(frontier_targets[i]) == 0:
                 continue
 
+            # Nearest frontier cell to the end point
             closest_frontier_cell = tuple(
                 min(frontier_targets[i], key=lambda cell: np.linalg.norm(np.array(cell) - robot.position)))
+            nearest_node_in_segment = tuple(
+                min(segment, key=lambda node: np.linalg.norm(np.array(node) - np.array(closest_frontier_cell))))
 
-            if closest_frontier_cell not in graph:
-                graph.add_node(closest_frontier_cell)
-                nearest_node_in_segment = tuple(
-                    min(segment, key=lambda node: np.linalg.norm(np.array(node) - np.array(closest_frontier_cell))))
-                graph.add_edge(closest_frontier_cell, nearest_node_in_segment)
+            # Second path segment: on Voronoi graph
+            path_on_voronoi = nx.astar_path(graph, nearest_voronoi_node, nearest_node_in_segment, heuristic=heuristic)
 
-            try:
-                path = nx.astar_path(graph, position, closest_frontier_cell, heuristic=heuristic)
-                path_cost = len(path)
-                if position in segment:
-                    path_cost *= 0.01
-            except nx.NetworkXNoPath:
-                path_cost = 99999
-            except nx.NodeNotFound:
-                if not graph.has_node(position):
-                    print(f"Source node {position} is not in the graph.")
-                if not graph.has_node(closest_frontier_cell):
-                    print(f"Target node {closest_frontier_cell} is not in the graph.")
+            # Third path segment: from Voronoi graph to end point
+            path_to_endpoint = nx.astar_path(path_graph, nearest_node_in_segment, closest_frontier_cell,
+                                             heuristic=heuristic)
 
+            # Combine paths
+            complete_path = path_to_voronoi + path_on_voronoi[1:] + path_to_endpoint[1:]  # Avoid duplicating nodes
+
+            # Calculate path cost and store paths
+            path_cost = len(complete_path)
             robot_costs[i] = path_cost
-            robot_paths[i] = path
-            graph.remove_nodes_from([closest_frontier_cell])
+            robot_paths[i] = complete_path
 
         costs[robot] = robot_costs
         paths_dict[robot] = robot_paths
