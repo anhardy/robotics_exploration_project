@@ -226,7 +226,7 @@ def assign_paths(graph, robots, segments, frontier_targets, nodes, path_graph, o
             # First path segment: from robot to nearest node on Voronoi graph
             path_to_voronoi = nx.astar_path(path_graph, position, nearest_voronoi_node,
                                             heuristic=heuristic)
-        except nx.NetworkXNoPath:
+        except nx.NodeNotFound:
             # If robot's position is not in the global graph, find the nearest node
             nearest_node_in_global_graph = find_nearest_node(path_graph, position)
             path_to_voronoi = [position, nearest_node_in_global_graph]
