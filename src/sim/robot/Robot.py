@@ -47,7 +47,7 @@ class Robot:
         if np.any(self.velocity != 0):
             if np.any(self.velocity != 0):
                 new_orientation = self.velocity / np.linalg.norm(self.velocity)
-                self.orientation = self.smooth_turn(self.orientation, new_orientation, 0.5)
+                self.orientation = self.smooth_turn(self.orientation, new_orientation, 0.3)
         self.perception_cone = self.get_perception_cone()
 
     def smooth_turn(self, current_orientation, new_orientation, turning_rate):

@@ -1,4 +1,5 @@
 import numpy as np
+from matplotlib import pyplot as plt
 from scipy.optimize import linear_sum_assignment
 from skimage.morphology import skeletonize
 import networkx as nx
@@ -237,13 +238,34 @@ def assign_paths(graph, robots, segments, frontier_targets, nodes, path_graph, o
                 continue
 
             # Nearest frontier cell to the end point
-            closest_frontier_cell = tuple(
-                min(frontier_targets[i], key=lambda cell: np.linalg.norm(np.array(cell) - robot.position)))
-            nearest_node_in_segment = tuple(
-                min(segment, key=lambda node: np.linalg.norm(np.array(node) - np.array(closest_frontier_cell))))
+            frontier_cells = np.array(frontier_targets[i])
+
+            distances = np.linalg.norm(frontier_cells - robot.position, axis=1)
+
+            min_index = np.argmin(distances)
+
+            # Get the closest frontier cell
+            closest_frontier_cell = tuple(frontier_cells[min_index])
+
+            distances = np.linalg.norm(segment - np.array(closest_frontier_cell), axis=1)
+
+            min_index = np.argmin(distances)
+
+            nearest_node_in_segment = tuple(segment[min_index])
 
             # Second path segment: on Voronoi graph
-            path_on_voronoi = nx.astar_path(graph, nearest_voronoi_node, nearest_node_in_segment, heuristic=heuristic)
+            try:
+                path_on_voronoi = nx.astar_path(graph, nearest_voronoi_node, nearest_node_in_segment, heuristic=heuristic)
+            except Exception as e:
+                path_on_voronoi = nx.astar_path(path_graph, nearest_voronoi_node, nearest_node_in_segment,
+                                                heuristic=heuristic)
+                # print(e)
+                # nx.draw_networkx_nodes(graph, pos={n: n for n in graph.nodes}, node_color='blue', node_size=1)
+                # nx.draw_networkx_edges(graph, pos={n: n for n in graph.nodes}, edge_color='red')
+                #
+                # plt.savefig('skeleton_crash.png')
+                # plt.show()
+                # exit(0)
 
             # Third path segment: from Voronoi graph to end point
             path_to_endpoint = nx.astar_path(path_graph, nearest_node_in_segment, closest_frontier_cell,
@@ -276,9 +298,9 @@ def assign_paths(graph, robots, segments, frontier_targets, nodes, path_graph, o
 
     # Iterative reassignment
     while unassigned_robots:
-        # Recompute cost matrix for unassigned robots, excluding assigned segments
+        # Recompute cost matrix for unassigned robots
         new_cost_matrix = cost_matrix[[robots.index(robot) for robot in unassigned_robots], :]
-        new_cost_matrix[:, col_ind] = 99999  # Set costs of assigned segments to a high value
+        # new_cost_matrix[:, col_ind] = 99999  # Set costs of assigned segments to a high value
 
         # Find new assignments for unassigned robots
         row_ind, col_ind_new = linear_sum_assignment(new_cost_matrix)
