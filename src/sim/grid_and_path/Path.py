@@ -309,10 +309,9 @@ def assign_paths(graph, robots, segments, frontier_targets, nodes, path_graph, o
     # Identify unassigned robots
     unassigned_robots = [robot for robot, path in assignment.items() if path is None]
 
+    prev_length = len(unassigned_robots)
     # Iterative reassignment
-    loops = 0
-    while unassigned_robots and loops < 10:
-        loops += 1
+    while unassigned_robots:
         # Recompute cost matrix for unassigned robots
         new_cost_matrix = cost_matrix[[robots.index(robot) for robot in unassigned_robots], :]
         # new_cost_matrix[:, col_ind] = 99999  # Set costs of assigned segments to a high value
@@ -324,6 +323,13 @@ def assign_paths(graph, robots, segments, frontier_targets, nodes, path_graph, o
             assignment[robot] = paths_dict[robot][j] if j < len(segments) else None
 
         # Update unassigned robots
+        unassigned_robots = [robot for robot, path in assignment.items() if path is None]
+
+        if len(unassigned_robots) == prev_length:
+            break
+
+        # Update the previous length for the next iteration
+        prev_length = len(unassigned_robots)
         unassigned_robots = [robot for robot, path in assignment.items() if path is None]
 
     for robot in robots:
