@@ -233,51 +233,64 @@ def assign_paths(graph, robots, segments, frontier_targets, nodes, path_graph, o
             path_to_voronoi = [position, nearest_node_in_global_graph]
 
         for i, segment in enumerate(segments):
-
-            if len(frontier_targets[i]) == 0:
-                continue
-
-            # Nearest frontier cell to the end point
-            frontier_cells = np.array(frontier_targets[i])
-
-            distances = np.linalg.norm(frontier_cells - robot.position, axis=1)
-
-            min_index = np.argmin(distances)
-
-            # Get the closest frontier cell
-            closest_frontier_cell = tuple(frontier_cells[min_index])
-
-            distances = np.linalg.norm(segment - np.array(closest_frontier_cell), axis=1)
-
-            min_index = np.argmin(distances)
-
-            nearest_node_in_segment = tuple(segment[min_index])
-
-            # Second path segment: on Voronoi graph
             try:
-                path_on_voronoi = nx.astar_path(graph, nearest_voronoi_node, nearest_node_in_segment, heuristic=heuristic)
-            except Exception as e:
-                path_on_voronoi = nx.astar_path(path_graph, nearest_voronoi_node, nearest_node_in_segment,
-                                                heuristic=heuristic)
-                # print(e)
-                # nx.draw_networkx_nodes(graph, pos={n: n for n in graph.nodes}, node_color='blue', node_size=1)
-                # nx.draw_networkx_edges(graph, pos={n: n for n in graph.nodes}, edge_color='red')
+
+                if len(frontier_targets[i]) == 0:
+                    continue
+
+                # Nearest frontier cell to the end point
+                frontier_cells = np.array(frontier_targets[i])
+
+                distances = np.linalg.norm(frontier_cells - robot.position, axis=1)
+
+                min_index = np.argmin(distances)
+
+                # Get the closest frontier cell
+                closest_frontier_cell = tuple(frontier_cells[min_index])
+
+                distances = np.linalg.norm(segment - np.array(closest_frontier_cell), axis=1)
+
+                min_index = np.argmin(distances)
+
+                nearest_node_in_segment = tuple(segment[min_index])
+
+                # Second path segment: on Voronoi graph
+                try:
+                    path_on_voronoi = nx.astar_path(graph, nearest_voronoi_node, nearest_node_in_segment, heuristic=heuristic)
+                except Exception as e:
+                    path_on_voronoi = nx.astar_path(path_graph, nearest_voronoi_node, nearest_node_in_segment,
+                                                    heuristic=heuristic)
+                    # print(e)
+                    # nx.draw_networkx_nodes(graph, pos={n: n for n in graph.nodes}, node_color='blue', node_size=1)
+                    # nx.draw_networkx_edges(graph, pos={n: n for n in graph.nodes}, edge_color='red')
+                    #
+                    # plt.savefig('skeleton_crash.png')
+                    # plt.show()
+                    # exit(0)
+
+                # Third path segment: from Voronoi graph to end point
+                # try:
+                path_to_endpoint = nx.astar_path(path_graph, nearest_node_in_segment, closest_frontier_cell,
+                                                 heuristic=heuristic)
+                # except Exception as e:
+                #     print(e)
+                #     nx.draw_networkx_nodes(graph, pos={n: n for n in graph.nodes}, node_color='blue', node_size=1)
+                #     nx.draw_networkx_edges(graph, pos={n: n for n in graph.nodes}, edge_color='red')
                 #
-                # plt.savefig('skeleton_crash.png')
-                # plt.show()
-                # exit(0)
+                #     plt.savefig('skeleton_crash.png')
+                #     plt.show()
+                #     exit(0)
 
-            # Third path segment: from Voronoi graph to end point
-            path_to_endpoint = nx.astar_path(path_graph, nearest_node_in_segment, closest_frontier_cell,
-                                             heuristic=heuristic)
+                # Combine paths
+                complete_path = path_to_voronoi + path_on_voronoi[1:] + path_to_endpoint[1:]  # Avoid duplicating nodes
 
-            # Combine paths
-            complete_path = path_to_voronoi + path_on_voronoi[1:] + path_to_endpoint[1:]  # Avoid duplicating nodes
+                # Calculate path cost and store paths
+                path_cost = len(complete_path)
+                robot_costs[i] = path_cost
+                robot_paths[i] = complete_path
 
-            # Calculate path cost and store paths
-            path_cost = len(complete_path)
-            robot_costs[i] = path_cost
-            robot_paths[i] = complete_path
+            except Exception as e:
+                continue
 
         costs[robot] = robot_costs
         paths_dict[robot] = robot_paths
