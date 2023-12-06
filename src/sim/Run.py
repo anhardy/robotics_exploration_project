@@ -1,3 +1,5 @@
+import random
+
 import networkx as nx
 import numpy as np
 from matplotlib import pyplot as plt
@@ -27,7 +29,7 @@ env.scale_grid(750, 750)
 controller = RobotController(1, 5, steer_behavior=steer_behavior, avoid_behavior=avoidance_behavior)
 
 for robot in env.starting_points:
-    robots.append(Robot(robot, max_vel=2, num_vectors=30, angle_range=np.pi / 3, perception_range=30, avoid_range=10,
+    robots.append(Robot(robot, max_vel=2, num_vectors=30, angle_range=np.pi / 3, perception_range=30, avoid_range=6.5,
                         arrival_range=10))
 
 grid_height = 750
@@ -44,7 +46,7 @@ env_size = np.array((env.width, env.height), dtype=float)
 grid_size = np.array((grid_width, grid_height))
 grid_history = [np.copy(occupancy_grid)]
 # Minimum time until next update, regardless of if a robot completes its current path
-min_update_interval = 15
+min_update_interval = 5
 time_since_last_update = 0
 path_graph = create_graph_from_grid(occupancy_grid)
 for i in tqdm(range(3000), desc="Running Simulation"):
@@ -60,7 +62,7 @@ for i in tqdm(range(3000), desc="Running Simulation"):
             controller.calculate_acceleration(robot, robot.path, intersections))
         robot.update_velocity()
         robot.update_position()
-        if robot.path is None or len(robot.path) == 0:
+        if robot.path is None or len(robot.path) <= 1:
             update_flag = True
 
     occupancy_grid, frontier_grid, path_graph = update_grid(occupancy_grid, all_intersections, all_open_spaces,
